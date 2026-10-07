@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nexus Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Michroma&display=swap">
+<style>
+/* Layout: full-bleed WebGL stage. HUD floats on top: route status top-left, meters + route map top-right, dock and pull-up sheet along the bottom. */
+:root{
+  --void:#03040a;
+  --ink:#e9edf6;
+  --dim:#8f98ad;
+  --glass:rgba(8,10,18,.7);
+  --line:rgba(160,190,235,.2);
+  --gold:#ffc46b;
+  --a:#1abfff;
+  --b:#ff3aa6;
+  --f-display:"Michroma","Eurostile","Microgramma","Arial Black",sans-serif;
+  --f-ui:"Chakra Petch",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;background:var(--void);color:var(--ink);overflow:hidden}
+body{margin:0;font:14px/1.45 var(--f-ui);-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;background:var(--void)}
+#stage:active{cursor:grabbing}
+.scrim{position:fixed;left:0;right:0;top:0;height:190px;pointer-events:none;background:linear-gradient(rgba(0,0,0,.52),rgba(0,0,0,0));transition:opacity .6s}
+#hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 12px)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.ident{max-width:min(560px,64vw);transition:opacity 1s;min-width:0}
+.brand{font:600 11px/1.3 var(--f-ui);letter-spacing:.26em;color:var(--dim);text-transform:uppercase}
+.brand b{color:var(--gold);font-weight:600}
+h1{font:400 clamp(20px,4.4vw,40px)/1.08 var(--f-display);letter-spacing:.03em;margin:.32em 0 .22em;text-shadow:0 2px 22px rgba(0,0,0,.7);transition:color .5s}
+h1.detour{color:var(--route-color,var(--a))}
+#routeDesc{margin:0;opacity:.8;max-width:44ch;text-shadow:0 1px 10px rgba(0,0,0,.8)}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;transition:opacity .5s}
+.meters{display:flex;align-items:center;gap:10px}
+.bpm{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums}
+.bpm b{font:400 20px/1 var(--f-display)}
+.bpm span{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.bars{display:flex;gap:3px;height:22px;align-items:flex-end}
+.bars i{display:block;width:5px;height:100%;background:var(--a);transform-origin:bottom;transform:scaleY(.1);border-radius:1px;opacity:.85}
+.bars i:first-child{background:var(--gold)}
+.mapwrap{position:relative;width:clamp(104px,22vw,150px);aspect-ratio:1;max-width:100%;border:1px solid var(--line);border-radius:50%;
+  background:radial-gradient(rgba(10,14,26,.72),rgba(4,5,10,.82));overflow:hidden;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#map{width:100%;height:100%;display:block}
+.stats{font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;font-variant-numeric:tabular-nums;text-align:right}
+.stats b{color:var(--ink);font-weight:600}
+.src{font-size:10.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;max-width:38vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bottom{display:flex;flex-direction:column;gap:8px;width:100%;max-width:760px;margin:0 auto;pointer-events:none}
+.sheet,.dock{pointer-events:auto}
+.sheet{background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:14px;max-height:min(52vh,440px);overflow:auto;
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);overscroll-behavior:contain;touch-action:pan-y}
+.dock{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;transition:opacity .5s}
+button,.btn{font:600 11px/1 var(--f-ui);letter-spacing:.13em;text-transform:uppercase;color:var(--ink);background:var(--glass);
+  border:1px solid var(--line);border-radius:10px;padding:13px 6px;cursor:pointer;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;text-align:center;min-width:0;text-decoration:none}
+button:focus-visible,.btn:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+button[aria-pressed="true"],.dock button.open{border-color:var(--a);color:var(--a)}
+.dock .go{background:linear-gradient(180deg,#ffdca0,var(--gold));color:#1a1000;border-color:transparent}
+.dock .go:active{transform:scale(.97)}
+.dock .go.armed{background:linear-gradient(180deg,#bff0ff,var(--a));}
+.panel{display:flex;flex-direction:column;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:11px 12px}
+.swatch{display:inline-flex;gap:3px}
+.swatch i{width:9px;height:9px;border-radius:50%;display:block}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.row > *{flex:1 1 140px}
+.hint{margin:0;color:var(--dim);font-size:12.5px;max-width:62ch}
+.field{display:grid;grid-template-columns:130px minmax(0,1fr);align-items:center;gap:10px}
+.field label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.field output{color:var(--ink);font-variant-numeric:tabular-nums;margin-left:4px}
+input[type=range]{width:100%;accent-color:var(--gold)}
+.seg{display:grid;grid-template-columns:130px minmax(0,1fr);align-items:center;gap:10px}
+.seg > span{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.seg > div{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{padding:10px 11px;flex:1 1 auto}
+.toggles{display:flex;flex-direction:column;gap:8px}
+.toggles label{display:flex;gap:10px;align-items:center;font-size:13px}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold)}
+.keys{margin:0;color:var(--dim);font-size:12px;letter-spacing:.04em}
+.keys kbd{font:600 11px var(--f-ui);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--ink)}
+.link{color:var(--a)}
+#hud.idle .dock,#hud.idle .side{opacity:0;pointer-events:none}
+#hud.idle .ident{opacity:.0}
+#hud.off .dock,#hud.off .side,#hud.off .ident,#hud.off .sheet{opacity:0;pointer-events:none}
+#hud.off ~ .scrim,#hud.idle ~ .scrim{opacity:0}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 16px);transform:translate(-50%,-140%);opacity:0;max-width:min(520px,calc(100vw - 32px));
+  background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;transition:transform .35s,opacity .35s;
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);pointer-events:none;z-index:5}
+#toast.show{transform:translate(-50%,0);opacity:1}
+#drop{position:fixed;inset:12px;border:2px dashed var(--gold);border-radius:18px;display:flex;align-items:center;justify-content:center;
+  font:400 clamp(18px,4vw,34px) var(--f-display);color:var(--gold);background:rgba(4,5,10,.55);pointer-events:none;z-index:6}
+#vhs{position:fixed;left:calc(16px + 2vw);bottom:calc(env(safe-area-inset-bottom,0px) + 86px);font:600 clamp(16px,3.4vw,30px)/1.3 "Courier New",ui-monospace,monospace;
+  color:#f4f4f4;text-shadow:2px 0 #ff2a6d,-2px 0 #2de2ff;letter-spacing:.06em;pointer-events:none;display:flex;flex-direction:column}
+#nogl{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding-inline:24px;text-align:center;color:var(--ink);font-size:16px}
+@media (max-width:520px){
+  .dock button{font-size:10px;letter-spacing:.07em;padding:13px 2px}
+  .field,.seg{grid-template-columns:1fr;gap:6px}
+  #routeDesc{font-size:13px}
+  .meters .bpm b{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){ #toast,.ident,.dock,h1{transition:none} }
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="Nexus Runner visual. Drag to look around, tap to show or hide controls."></canvas>
+<div id="hud">
+  <header class="top">
+    <div class="ident" id="ident">
+      <div class="brand"><b>Nexus Runner</b> · <span id="paletteName">Nexus</span> · <span id="lookName">Clean</span></div>
+      <h1 id="route">Main line</h1>
+      <p id="routeDesc">Following the main tunnel. Side arteries open off the walls on both sides.</p>
+    </div>
+    <div class="side">
+      <div class="meters">
+        <div class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="bpm"><b id="bpm">122</b><span>BPM</span></div>
+      </div>
+      <div class="mapwrap" title="Route map: the main line, your trail, and the path ahead"><canvas id="map" width="300" height="300" aria-label="Route map"></canvas></div>
+      <div class="stats"><b id="statDetours">0</b> <span id="lblDetours">detours</span> · <b id="statJunctions">0</b> <span id="lblJunctions">junctions</span></div>
+      <div class="src" id="src">Ghost beat</div>
+    </div>
+  </header>
+  <div class="bottom">
+    <section id="sheet" class="sheet" hidden>
+      <div class="panel" data-panel="palette"><div class="chips" id="paletteChips"></div>
+        <p class="hint">Each palette colors the main tunnel and the two labyrinths it cuts through. The route map and status use the same colors.</p></div>
+      <div class="panel" data-panel="look" hidden><div class="chips" id="lookChips"></div>
+        <p class="hint">Looks are applied after the render, so they work with any palette. GIF dither matches the screenshot that started all this.</p></div>
+      <div class="panel" data-panel="audio" hidden>
+        <div class="row">
+          <label class="btn" for="file">Load a track</label>
+          <button id="micBtn" type="button">Use mic or line-in</button>
+          <button id="playBtn" type="button" hidden>Pause</button>
+        </div>
+        <input type="file" id="file" accept="audio/*" hidden>
+        <p class="hint">MP3, WAV, AIFF or FLAC, or drop a file anywhere. Each kick sends a ring of light out through the labyrinth from where you are. The sub widens the side arteries, and the drop can throw you into a detour. The mic only works when this file is opened from a local server, not on the hosted page.</p>
+        <div class="field"><label for="sens">Sensitivity <output id="sensOut">1.0×</output></label><input type="range" id="sens" min="0.4" max="2.5" step="0.05" value="1"></div>
+        <div class="toggles">
+          <label><input type="checkbox" id="ghost" checked> Ghost beat at 122 BPM when nothing is playing</label>
+          <label><input type="checkbox" id="dropDetour" checked> Take a detour when the drop hits</label>
+        </div>
+      </div>
+      <div class="panel" data-panel="tune" hidden>
+        <div class="seg"><span>Detours</span><div id="freq"><button data-v="32">Rare</button><button data-v="16">Sometimes</button><button data-v="8">Often</button><button data-v="0">Lost</button></div></div>
+        <div class="seg"><span>Detour length</span><div id="dlen"><button data-v="short">Short</button><button data-v="medium">Medium</button><button data-v="long">Long</button></div></div>
+        <div class="seg"><span>Side arteries</span><div id="width"><button data-v="0.76">Narrow</button><button data-v="0.62">Normal</button><button data-v="0.48">Wide</button></div></div>
+        <div class="field"><label for="speed">Speed <output id="speedOut">1.0×</output></label><input type="range" id="speed" min="0.25" max="3" step="0.05" value="1"></div>
+        <div class="field"><label for="trail">Trails <output id="trailOut">1.0×</output></label><input type="range" id="trail" min="0" max="2.5" step="0.05" value="1"></div>
+        <div class="seg"><span>Quality</span><div id="quality"><button data-v="auto">Auto</button><button data-v="low">Low</button><button data-v="med">Medium</button><button data-v="high">High</button></div></div>
+        <div class="row"><button id="fsBtn" type="button">Fullscreen</button><button id="hideBtn" type="button">Hide controls</button></div>
+        <p class="keys"><kbd>Space</kbd> detour · <kbd>A</kbd> auto detours · <kbd>P</kbd> palette · <kbd>L</kbd> look · <kbd>↑</kbd><kbd>↓</kbd> speed · <kbd>H</kbd> hide · <kbd>F</kbd> fullscreen · drag to look around · tap to hide</p>
+        <p class="hint">The rest of the tunnels are in <a class="link" href="https://claude.ai/artifact/26kM7ZYT8LoWKAzmiqNm27" target="_blank" rel="noopener">Wormhole Lab</a>.</p>
+        <p class="hint" id="perf">Rendering…</p>
+      </div>
+    </section>
+    <nav class="dock" aria-label="Controls">
+      <button type="button" data-tab="palette">Palette</button>
+      <button type="button" data-tab="look">Look</button>
+      <button type="button" data-tab="audio">Audio</button>
+      <button type="button" data-tab="tune">Tune</button>
+      <button type="button" id="goBtn" class="go">Detour</button>
+      <button type="button" id="autoBtn" aria-pressed="true">Auto</button>
+    </nav>
+  </div>
+</div>
+<div class="scrim" aria-hidden="true"></div>
+<div id="vhs" hidden><span>PLAY ▶</span><span id="vhsDate"></span></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="drop" hidden>Drop to play</div>
+<div id="nogl" hidden>This visualizer needs WebGL2. Try a current version of Chrome, Safari, Edge or Firefox.</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const canvas = $('#stage');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false, stencil:false, premultipliedAlpha:false, powerPreference:'high-performance'});
+if (!gl) { $('#nogl').hidden = false; $('#hud').hidden = true; return; }
+const TEST = /[?&]test/.test(location.search);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const floatOK = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+const parallel = gl.getExtension('KHR_parallel_shader_compile');
+const errors = [];
+
+/* ================================================================
+   Geometry shared by the shader and the route planner.
+   Main line: a tube carved along path(z).
+   Side arteries: both labyrinths of the gyroid g = sin x cos y + sin y cos z + sin z cos x,
+   sampled at p*1.3 and kept wherever |g| > threshold.
+   ================================================================ */
+const CURVE = .8, TUBE_R = 1.35, GSCALE = 1.3, Q = Math.PI/4;
+
+const VS = `#version 300 es
+out vec2 vUv;
+void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); vUv = p; gl_Position = vec4(p*2. - 1., 0., 1.); }`;
+
+const SCENE = `#version 300 es
+precision highp float;
+precision highp int;
+uniform vec2 uRes;
+uniform float uTime, uKick, uBass, uHat, uQ, uFov, uTubeR, uChanC, uWiden, uWave, uJunc, uCurve;
+uniform vec3 uCamPos, uColT, uColA, uColB;
+uniform mat3 uCamRot;
+uniform vec2 uLook;
+out vec4 fragColor;
+#define TAU 6.28318531
+mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+float smax(float a, float b, float k){ float h = max(k - abs(a - b), 0.)/k; return max(a, b) + h*h*k*.25; }
+vec2 path(float z){ return uCurve*vec2(sin(z*.13)*2.6 + sin(z*.051 + 1.3)*3.4, cos(z*.107)*2.1 + sin(z*.037 + .5)*2.8); }
+float gyr(vec3 p){ return dot(sin(p), cos(p.yzx)); }
+float mapN(vec3 p, out float g, out float tb, out float ch){
+  vec2 q = p.xy - path(p.z);
+  tb = uTubeR + .3*sin(p.z*.19) - length(q);
+  g = gyr(p*1.3);
+  vec3 dc = p - uCamPos;
+  float wid = uWiden*.5*exp(-dot(dc, dc)*.09);
+  ch = (abs(g) - uChanC + .09*uBass + wid)/2.4;
+  return smax(tb, ch, .25);
+}
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec2 uv = (fc - .5*uRes)/min(uRes.x, uRes.y);
+  vec3 rd = normalize(vec3(uv*uFov, 1.));
+  rd.yz *= rot(uLook.y);
+  rd.xz *= rot(-uLook.x);
+  rd = normalize(uCamRot*rd);
+  vec3 ro = uCamPos;
+  float t = .03, g, tb, ch, d = 1.;
+  bool hit = false;
+  vec3 acc = vec3(0.);
+  int N = int(mix(56., 124., uQ));
+  for(int i = 0; i < 124; i++){
+    if(i >= N) break;
+    vec3 p = ro + rd*t;
+    d = mapN(p, g, tb, ch);
+    if(ch > 0. && tb < 0.){
+      float flow = .55 + .45*sin(dot(p, vec3(.7, .5, .9))*2.2 - uTime*3.);
+      acc += (g > 0. ? uColA : uColB)*.011*(.4 + 1.6*uKick)*flow*smoothstep(0., .2, ch)*exp(-t*.07);
+    }
+    if(d < .001*t + .0006){ hit = true; break; }
+    t += d*.8;
+    if(t > 32.) break;
+  }
+  vec3 bg = vec3(.006, .008, .02);
+  vec3 col = bg;
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec2 e = vec2(.005, -.005); float a1, a2, a3;
+    vec3 n = normalize(e.xyy*mapN(p + e.xyy, a1, a2, a3) + e.yyx*mapN(p + e.yyx, a1, a2, a3) + e.yxy*mapN(p + e.yxy, a1, a2, a3) + e.xxx*mapN(p + e.xxx, a1, a2, a3));
+    mapN(p, g, tb, ch);
+    float dif = max(dot(n, -rd), 0.);
+    float fres = pow(1. - dif, 3.);
+    vec3 film = .5 + .5*cos(TAU*(dot(n, rd)*1.3 + g*.3 + uTime*.04 + vec3(0., .33, .67)));
+    float x1 = fract(g*2.2 - uTime*.35);
+    float lw = 1. + t*.09;
+    float lnT = smoothstep(.07*lw, 0., min(x1, 1. - x1))*min(1., 1.6/lw);
+    float g2 = gyr(p*2.6 + 1.3);
+    float x2 = fract(g2*1.6 + uTime*.25);
+    float lnC = smoothstep(.06*lw, 0., min(x2, 1. - x2))*min(1., 1.6/lw);
+    float wave = exp(-abs(t - uWave)*1.4)*uKick;
+    float boost = 1. + uJunc*1.2 + wave*3.5;
+    if(tb > ch){
+      col = vec3(.012, .014, .024) + film*fres*.22 + vec3(.05, .06, .09)*pow(dif, 8.);
+      col += uColT*lnT*(.7 + 1.6*uKick + .8*uBass)*boost;
+    } else {
+      vec3 cc = g > 0. ? uColA : uColB;
+      col = cc*(.015 + mix(.18, .08, uWiden)*dif) + film*fres*.12 + cc*lnC*(.9 + 1.4*uKick)*boost;
+    }
+    col += mix(uColT, vec3(1.), .5)*exp(-abs(tb - ch)*22.)*(.4 + 1.6*uKick);
+    col = mix(col, bg, 1. - exp(-t*(.07 + .07*uWiden)));
+  }
+  col += acc;
+  if(any(isnan(col)) || any(isinf(col))) col = vec3(0.);
+  fragColor = vec4(clamp(col, 0., 60.), clamp((hit ? t : 40.)/40., 0., 1.));
+}`;
+
+const FX = `#version 300 es
+precision highp float;
+uniform sampler2D uScene, uPrev;
+uniform vec2 uRes;
+uniform float uShock, uTrail, uBlur, uCA, uSpin;
+in vec2 vUv;
+out vec4 o;
+void main(){
+  vec2 uv = vUv;
+  float sc = min(uRes.x, uRes.y);
+  vec2 p = (gl_FragCoord.xy - .5*uRes)/sc;
+  float asp = uRes.x/uRes.y;
+  if(uShock > 0. && uShock < 1.){
+    float rr = length(p), fr = uShock*1.3;
+    float w = exp(-pow((rr - fr)*7., 2.))*(1. - uShock);
+    uv -= p/(rr + 1e-4)*w*.05*sc/uRes;
+  }
+  vec2 dir = uv - .5;
+  vec3 c = vec3(0.);
+  float ca = uCA*.01 + uShock*(1. - uShock)*.03;
+  for(int i = 0; i < 6; i++){
+    float k = float(i)/5.;
+    vec2 su = .5 + dir*(1. - uBlur*k*.03);
+    vec2 o2 = dir*ca;
+    c.r += texture(uScene, su + o2).r;
+    c.g += texture(uScene, su).g;
+    c.b += texture(uScene, su - o2).b;
+  }
+  c /= 6.;
+  vec2 dd = (uv - .5)*vec2(asp, 1.)*(1. - .015*uBlur);
+  float cs = cos(uSpin), sn = sin(uSpin);
+  dd = vec2(cs*dd.x - sn*dd.y, sn*dd.x + cs*dd.y);
+  vec3 prev = texture(uPrev, .5 + dd/vec2(asp, 1.)).rgb;
+  c = max(c, prev*uTrail);
+  o = vec4(c, 1.);
+}`;
+
+const BRIGHT = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uTh;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec3 c = (texture(uSrc, vUv + uTexel*vec2(-.5, -.5)).rgb + texture(uSrc, vUv + uTexel*vec2(.5, -.5)).rgb
+          + texture(uSrc, vUv + uTexel*vec2(-.5, .5)).rgb + texture(uSrc, vUv + uTexel*vec2(.5, .5)).rgb)*.25;
+  float l = max(c.r, max(c.g, c.b));
+  c *= max(l - uTh, 0.)/max(l, 1e-4);
+  o = vec4(c, 1.);
+}`;
+const DOWN = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec2 h = uTexel;
+  vec3 s = texture(uSrc, vUv).rgb*4. + texture(uSrc, vUv - h).rgb + texture(uSrc, vUv + h).rgb
+         + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb + texture(uSrc, vUv - vec2(h.x, -h.y)).rgb;
+  o = vec4(s/8., 1.);
+}`;
+const UP = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec2 h = uTexel;
+  vec3 s = texture(uSrc, vUv + vec2(-h.x*2., 0.)).rgb + texture(uSrc, vUv + vec2(-h.x, h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(0., h.y*2.)).rgb + texture(uSrc, vUv + vec2(h.x, h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(h.x*2., 0.)).rgb + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(0., -h.y*2.)).rgb + texture(uSrc, vUv + vec2(-h.x, -h.y)).rgb*2.;
+  o = vec4(s/12., 1.);
+}`;
+const FINAL = `#version 300 es
+precision highp float;
+uniform sampler2D uFx, uBloom, uBlue;
+uniform vec2 uRes;
+uniform float uTime, uKick, uFlash, uBloomAmt, uExposure;
+uniform int uLook;
+in vec2 vUv; out vec4 o;
+float hh(float p){ p = fract(p*.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+vec3 aces(vec3 x){ return clamp((x*(2.51*x + .03))/(x*(2.43*x + .59) + .14), 0., 1.); }
+vec3 hueRot(vec3 c, float a){ const vec3 k = vec3(.57735); float ca = cos(a); return c*ca + cross(k, c)*sin(a) + k*dot(k, c)*(1. - ca); }
+vec3 ramp(float x){
+  x = clamp(x, 0., 1.)*4.;
+  vec3 a = vec3(0.), b = vec3(.22, .02, .45), c = vec3(.85, .1, .45), d = vec3(1., .55, .05), e = vec3(1., 1., .85);
+  return x < 1. ? mix(a, b, x) : x < 2. ? mix(b, c, x - 1.) : x < 3. ? mix(c, d, x - 2.) : mix(d, e, x - 3.);
+}
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  float px = 1.;
+  if(uLook == 2 || uLook == 3) px = max(2., floor(min(uRes.x, uRes.y)/380.));
+  vec2 uv = ((floor(fc/px) + .5)*px)/uRes;
+  if(uLook == 4){
+    float ln = floor(fc.y/2.);
+    uv.x += sin(ln*.07 + uTime*3.)*.0012 + (hh(ln + floor(uTime*30.)) - .5)*.004*step(.93, hh(floor(uTime*5.)));
+  }
+  vec3 c = texture(uFx, uv).rgb;
+  vec3 b = texture(uBloom, uv).rgb;
+  if(uLook == 1) b *= vec3(1.2, .85, .68);
+  c += b*uBloomAmt;
+  if(uLook == 4){
+    c.r = mix(c.r, texture(uFx, uv + vec2(.005, 0.)).r, .65);
+    c.b = mix(c.b, texture(uFx, uv - vec2(.005, 0.)).b, .65);
+  }
+  c *= uExposure;
+  c += uFlash*uFlash*vec3(2.8, 2.9, 3.);
+  vec3 m = aces(c);
+  float L = dot(m, vec3(.299, .587, .114));
+  float dn = texture(uBlue, floor(fc/px)/64.).r;
+  vec2 q = uv - .5;
+  float vig = 1. - dot(q, q)*.9;
+  if(uLook == 0){
+    m *= vig;
+  } else if(uLook == 1){
+    m = mix(vec3(L), m, 1.12);
+    m = m*vec3(1.04, 1., .93) + vec3(0., .014, .03)*(1. - L);
+    m = smoothstep(-.02, 1.02, m);
+    float gr = texture(uBlue, (fc + vec2(floor(uTime*24.)*17., floor(uTime*24.)*29.))/64.).r - .5;
+    m += gr*.075*(1. - L*.6);
+    m *= vig;
+  } else if(uLook == 2){
+    float l = smoothstep(.015, .93, pow(L, .92))*mix(1., vig, .6);
+    l = floor(l*7. + dn)/7.;
+    m = vec3(l)*vec3(.97, .98, 1.);
+  } else if(uLook == 3){
+    float l = smoothstep(.03, .88, L)*mix(1., vig, .5);
+    m = mix(vec3(.03, .03, .05), vec3(.93, .94, .9), step(dn, l));
+  } else if(uLook == 4){
+    m = mix(vec3(L), m, .8)*vec3(1.02, .97, 1.08) + .03;
+    m *= .82 + .18*step(.5, fract(fc.y/3.));
+    m += (hh(fc.x*.37 + fc.y*1.31 + floor(uTime*60.)) - .5)*.07;
+    m += step(abs(uv.y - 1. + fract(uTime*.07)*1.2), .015)*.12;
+    m *= vig;
+  } else if(uLook == 5){
+    m = ramp(pow(L, .85)*1.05)*vig;
+  } else if(uLook == 6){
+    vec3 s = hueRot(m, uTime*.7 + uKick*1.6);
+    s = mix(vec3(dot(s, vec3(.299, .587, .114))), s, 1.8);
+    s = floor(clamp(s, 0., 1.)*5. + dn)/5.;
+    m = s*vig;
+  }
+  m += (dn - .5)/255.;
+  o = vec4(m, 1.);
+}`;
+
+/* ================================================================
+   GL plumbing
+   ================================================================ */
+gl.bindVertexArray(gl.createVertexArray());
+let vsObj = null;
+function makeProgram(fsrc, name){
+  if (!vsObj){ vsObj = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vsObj, VS); gl.compileShader(vsObj); }
+  const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsrc); gl.compileShader(fs);
+  const p = gl.createProgram(); gl.attachShader(p, vsObj); gl.attachShader(p, fs); gl.linkProgram(p);
+  return {p, fs, name, src:fsrc, loc:{}, ready:false, failed:false};
+}
+function ready(P){
+  if (P.ready) return true;
+  if (P.failed) return false;
+  if (parallel && !gl.getProgramParameter(P.p, parallel.COMPLETION_STATUS_KHR)) return false;
+  if (!gl.getProgramParameter(P.p, gl.LINK_STATUS)){
+    P.failed = true;
+    const log = gl.getShaderInfoLog(P.fs) || gl.getProgramInfoLog(P.p);
+    errors.push(P.name + ': ' + log);
+    console.error('Shader ' + P.name + ' failed:\n' + log);
+    return false;
+  }
+  P.ready = true; return true;
+}
+const U = (P, n) => { let l = P.loc[n]; if (l === undefined) l = P.loc[n] = gl.getUniformLocation(P.p, n); return l; };
+const f1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1f(l, a); };
+const f2 = (P, n, a, b) => { const l = U(P, n); if (l) gl.uniform2f(l, a, b); };
+const f3 = (P, n, v) => { const l = U(P, n); if (l) gl.uniform3f(l, v[0], v[1], v[2]); };
+const i1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1i(l, a); };
+const m3 = (P, n, m) => { const l = U(P, n); if (l) gl.uniformMatrix3fv(l, false, m); };
+const sceneP = makeProgram(SCENE, 'scene'), fxP = makeProgram(FX, 'fx'), brightP = makeProgram(BRIGHT, 'bright'), downP = makeProgram(DOWN, 'down'), upP = makeProgram(UP, 'up'), finalP = makeProgram(FINAL, 'final');
+
+function makeBlue(){
+  const N = 64, A = N*N;
+  let s = 99; const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0)/4294967296;
+  const a = new Float32Array(A), tmp = new Float32Array(A), blur = new Float32Array(A);
+  for (let i = 0; i < A; i++) a[i] = rnd();
+  const k = [.0702, .1311, .1907, .2161, .1907, .1311, .0702];
+  const idx = Array.from({length:A}, (_, i) => i);
+  for (let it = 0; it < 8; it++){
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){ let v = 0; for (let j = -3; j <= 3; j++) v += k[j + 3]*a[y*N + ((x + j + N) % N)]; tmp[y*N + x] = v; }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){ let v = 0; for (let j = -3; j <= 3; j++) v += k[j + 3]*tmp[((y + j + N) % N)*N + x]; blur[y*N + x] = v; }
+    for (let i = 0; i < A; i++) a[i] -= blur[i];
+    idx.sort((p, q) => a[p] - a[q]);
+    for (let r = 0; r < A; r++) a[idx[r]] = (r + .5)/A;
+  }
+  const d = new Uint8Array(A); for (let i = 0; i < A; i++) d[i] = Math.floor(a[i]*256);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, N, N, 0, gl.RED, gl.UNSIGNED_BYTE, d);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  return tex;
+}
+const blueTex = makeBlue();
+function makeRT(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (floatOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  return {tex, fb, w, h};
+}
+const freeRT = r => { gl.deleteTexture(r.tex); gl.deleteFramebuffer(r.fb); };
+let RT = null, iw = 0, ih = 0;
+function ensureTargets(w, h){
+  if (RT && RT.w === w && RT.h === h) return;
+  if (RT){ freeRT(RT.scene); RT.fx.forEach(freeRT); RT.bloom.forEach(freeRT); }
+  const bloom = []; let bw = w, bh = h;
+  for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); bloom.push(makeRT(bw, bh)); }
+  RT = {w, h, scene:makeRT(w, h), fx:[makeRT(w, h), makeRT(w, h)], bloom, ping:0};
+}
+const tex2 = (unit, t) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); };
+const target = r => { gl.bindFramebuffer(gl.FRAMEBUFFER, r ? r.fb : null); gl.viewport(0, 0, r ? r.w : canvas.width, r ? r.h : canvas.height); };
+
+/* ================================================================
+   Route planner: the same SDF in JS, the gyroid junction graph,
+   and a path that leaves the main line, walks the side arteries
+   junction by junction, and finds its way back.
+   ================================================================ */
+const v3 = {
+  add:(a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub:(a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  scl:(a, s) => [a[0]*s, a[1]*s, a[2]*s], dot:(a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+  len:a => Math.hypot(a[0], a[1], a[2]), mix:(a, b, t) => [a[0] + (b[0] - a[0])*t, a[1] + (b[1] - a[1])*t, a[2] + (b[2] - a[2])*t],
+  cross:(a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]],
+};
+v3.norm = a => { const l = v3.len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+v3.dist = (a, b) => v3.len(v3.sub(a, b));
+const pathXY = z => [CURVE*(Math.sin(z*.13)*2.6 + Math.sin(z*.051 + 1.3)*3.4), CURVE*(Math.cos(z*.107)*2.1 + Math.sin(z*.037 + .5)*2.8)];
+const spine = z => { const xy = pathXY(z); return [xy[0], xy[1], z]; };
+const gyr = (x, y, z) => Math.sin(x)*Math.cos(y) + Math.sin(y)*Math.cos(z) + Math.sin(z)*Math.cos(x);
+const radial = p => { const xy = pathXY(p[2]); return Math.hypot(p[0] - xy[0], p[1] - xy[1]); };
+const tubeV = p => TUBE_R + .3*Math.sin(p[2]*.19) - radial(p);
+const chanV = p => (Math.abs(gyr(p[0]*GSCALE, p[1]*GSCALE, p[2]*GSCALE)) - state.chanC)/2.4;
+const voidAt = p => Math.max(tubeV(p), chanV(p));
+function clear(a, b, m){
+  const L = v3.dist(a, b), n = Math.max(2, Math.ceil(L/.07));
+  for (let i = 0; i <= n; i++) if (voidAt(v3.mix(a, b, i/n)) < m) return false;
+  return true;
+}
+// Junctions sit at odd multiples of π/4 (in gyroid space) where g = ±1.5; each has exactly 3 neighbours.
+const EDGES = [[2,2,0],[2,-2,0],[-2,2,0],[-2,-2,0],[2,0,2],[2,0,-2],[-2,0,2],[-2,0,-2],[0,2,2],[0,2,-2],[0,-2,2],[0,-2,-2]];
+const vSign = n => { const g = gyr(n[0]*Q, n[1]*Q, n[2]*Q); return g > 1.499 ? 1 : g < -1.499 ? -1 : 0; };
+const vWorld = n => [n[0]*Q/GSCALE, n[1]*Q/GSCALE, n[2]*Q/GSCALE];
+const vKey = n => n.join(',');
+const neighbours = (n, s) => EDGES.map(e => [n[0] + e[0], n[1] + e[1], n[2] + e[2]]).filter(m => vSign(m) === s);
+const oddNear = x => { const k = Math.round((x - 1)/2); return [2*k - 1, 2*k + 1, 2*k + 3]; };
+
+const LENGTHS = {short:[2, 3], medium:[3, 6], long:[6, 11]};
+class Route {
+  constructor(){
+    this.pts = []; this.lens = []; this.zGen = 0; this.mode = 'spine'; this.pending = false; this.walk = null;
+    this.i = 1; this.d = 0; this.planned = false;
+    for (let k = 0; k < 4; k++) this.pushSpine();
+  }
+  pushSpine(){ this.pts.push({p:spine(this.zGen), kind:0}); this.zGen += 1; }
+  findEntry(z0, z1){
+    const cands = [];
+    for (let z = Math.ceil(z0*2)/2; z <= z1; z += .5){
+      const c = spine(z), base = c.map(v => v*GSCALE/Q);
+      for (const a of oddNear(base[0])) for (const b of oddNear(base[1])) for (const k of oddNear(base[2])){
+        const n = [a, b, k], s = vSign(n);
+        if (!s) continue;
+        const w = vWorld(n), r = radial(w);
+        if (w[2] < z + .3 || w[2] > z + 3.2 || r < .45 || r > TUBE_R + 1.1) continue;
+        // it must lead somewhere: at least one branch heads away from the main line
+        if (!neighbours(n, s).some(m => radial(vWorld(m)) > r + .3)) continue;
+        if (!clear(c, w, .14)) continue;
+        cands.push({z, c, n, s, score:Math.random() + r*.4});
+      }
+      if (cands.length) break;
+    }
+    cands.sort((u, v) => v.score - u.score);
+    return cands[0] || null;
+  }
+  findExit(w, zMin, force){
+    for (let z = Math.max(zMin, Math.ceil((w[2] - 2)*2)/2); z <= Math.max(zMin, w[2]) + 5; z += .5){
+      const c = spine(z);
+      if (clear(w, c, .12)) return z;
+    }
+    return force ? Math.max(zMin, Math.round(w[2]) + 1) : null;
+  }
+  extend(){
+    if (this.mode === 'spine'){
+      if (this.pending){
+        const e = this.findEntry(this.zGen, this.zGen + 6);
+        if (e){
+          while (this.zGen < e.z - .5) this.pushSpine();
+          this.pts.push({p:e.c, kind:0});
+          this.pts.push({p:vWorld(e.n), kind:e.s > 0 ? 1 : 2, junction:true});
+          const [lo, hi] = state.lost ? [24, 40] : LENGTHS[state.dlen];
+          this.walk = {n:e.n, s:e.s, prev:null, steps:0, out:lo + Math.floor(Math.random()*(hi - lo + 1)), zEntry:e.z, recent:[vKey(e.n)]};
+          this.mode = 'detour'; this.pending = false; this.planned = true;
+          return;
+        }
+      }
+      this.pushSpine();
+      return;
+    }
+    const W = this.walk, cur = vWorld(W.n);
+    if (W.steps >= W.out){
+      const z = this.findExit(cur, W.zEntry + 1.5, W.steps > W.out + 80);
+      if (z !== null){
+        this.pts.push({p:spine(z), kind:0, rejoin:true, forced:W.steps > W.out + 80});
+        this.zGen = z + 1; this.mode = 'spine'; this.walk = null;
+        return;
+      }
+    }
+    const returning = W.steps >= W.out, rc = radial(cur);
+    let best = null, bestS = -1e9;
+    for (const m of neighbours(W.n, W.s)){
+      if (W.prev && vKey(m) === vKey(W.prev)) continue;
+      const w = vWorld(m), dr = radial(w) - rc, dz = w[2] - cur[2];
+      let s = returning ? -radial(w)*1.4 + dz*.3 + Math.random()*.4 : dr*(state.lost ? .35 : 1) + dz*.55 + Math.random()*1.3;
+      if (W.recent.includes(vKey(m))) s -= 4;
+      if (!returning && radial(w) > 6.5) s -= 3;
+      if (s > bestS){ bestS = s; best = m; }
+    }
+    W.prev = W.n; W.n = best; W.steps++;
+    W.recent.push(vKey(best)); if (W.recent.length > 12) W.recent.shift();
+    this.pts.push({p:vWorld(best), kind:W.s > 0 ? 1 : 2, junction:true});
+  }
+  ensure(k){ while (this.pts.length < k + 2) this.extend(); }
+  bez(i, u){
+    const A = this.pts[i - 1].p, C = this.pts[i].p, B = this.pts[i + 1].p;
+    const m0 = v3.mix(A, C, .5), m1 = v3.mix(C, B, .5), a = (1 - u)*(1 - u), b = 2*u*(1 - u), c = u*u;
+    return [m0[0]*a + C[0]*b + m1[0]*c, m0[1]*a + C[1]*b + m1[1]*c, m0[2]*a + C[2]*b + m1[2]*c];
+  }
+  plen(i){
+    this.ensure(i);
+    if (this.lens[i] == null){ let L = 0, pr = this.bez(i, 0); for (let k = 1; k <= 8; k++){ const q = this.bez(i, k/8); L += v3.dist(pr, q); pr = q; } this.lens[i] = Math.max(L, 1e-3); }
+    return this.lens[i];
+  }
+  at(i, d){ while (d > this.plen(i)){ d -= this.plen(i); i++; } return this.bez(i, d/this.plen(i)); }
+  advance(dist, onPiece){
+    this.d += dist;
+    while (this.d > this.plen(this.i)){ this.d -= this.plen(this.i); this.i++; onPiece(this.pts[this.i], this.pts[this.i - 1]); }
+    this.ensure(this.i + 9);
+    if (this.i > 260){ const cut = 200; this.pts.splice(0, cut); this.lens.splice(0, cut); this.i -= cut; }
+  }
+  kindAt(off){ const p = this.pts[this.i + off]; return p ? p.kind : 0; }
+}
+
+/* ================================================================
+   Palettes and looks
+   ================================================================ */
+const PALETTES = [
+  {id:'nexus', name:'Nexus', T:[1, .72, .32], A:[.1, .75, 1], B:[1, .2, .65], an:'cyan', bn:'magenta'},
+  {id:'ember', name:'Ember', T:[1, .9, .72], A:[1, .45, .1], B:[.95, .12, .2], an:'amber', bn:'crimson'},
+  {id:'bio', name:'Biolume', T:[.35, 1, .85], A:[.45, 1, .3], B:[.6, .3, 1], an:'green', bn:'violet'},
+  {id:'uv', name:'Ultraviolet', T:[.75, .88, 1], A:[.45, .38, 1], B:[1, .32, .85], an:'indigo', bn:'pink'},
+  {id:'ghost', name:'Ghost', T:[.95, .95, .95], A:[.72, .78, .86], B:[.42, .46, .52], an:'pale', bn:'shadow'},
+];
+const LOOKS = [
+  {id:'clean', name:'Clean', n:0}, {id:'film', name:"Film '97", n:1}, {id:'gif', name:'GIF dither', n:2},
+  {id:'bit', name:'1-bit', n:3}, {id:'vhs', name:'VHS', n:4}, {id:'thermal', name:'Thermal', n:5}, {id:'acid', name:'Acid', n:6},
+];
+
+/* ================================================================
+   State
+   ================================================================ */
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('nxr:' + k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem('nxr:' + k, JSON.stringify(v)); } catch(e){} },
+};
+const state = {
+  palette:store.get('palette', 'nexus'), look:store.get('look', 'clean'), freq:store.get('freq', 16), dlen:store.get('dlen', 'medium'),
+  chanC:store.get('chanC', .62), speed:store.get('speed', 1), trail:store.get('trail', 1), quality:store.get('quality', 'auto'),
+  auto:true, ghost:store.get('ghost', true), dropDetour:store.get('dropDetour', true), sens:store.get('sens', 1), lost:false,
+};
+if (!PALETTES.some(p => p.id === state.palette)) state.palette = 'nexus';
+if (!LOOKS.some(l => l.id === state.look)) state.look = 'clean';
+if (!LENGTHS[state.dlen]) state.dlen = 'medium';
+state.lost = state.freq === 0;
+let clock = 0, route = new Route(), speedNow = 1;
+let camF = null, camUp = [0, 1, 0], camPos = [0, 0, 0], camR = [1, 0, 0];
+let look = [0, 0], lookTarget = [0, 0], renderScale = isTouch ? .6 : .8, uQ = .7;
+let widen = 0, junc = 0, shock = 1, lurch = 0, lastKickT = -9, beats = 0, timeSinceDetour = 0;
+let detours = 0, junctions = 0, routeKind = 0, rejoinT = 0, hist = [], legJ = 0;
+
+/* ================================================================
+   Audio (file, drop, mic or ghost beat)
+   ================================================================ */
+const audio = {
+  ctx:null, an:null, buf:null, el:null, node:null, stream:null, kind:'none', fileName:'',
+  env:{kick:0, bass:0, mid:0, high:0, hat:0},
+  bpm:0, kickTimes:[], flux:[], hiFlux:[], prevLow:0, prevHi:0, pk:[1e-4, 1e-4, 1e-4], lastKick:-9, lastHat:-9,
+  ghostPhase:0, shortB:0, longB:0, dropCool:8,
+  ensure(){
+    if (!this.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.an = this.ctx.createAnalyser(); this.an.fftSize = 2048; this.an.smoothingTimeConstant = 0;
+      this.buf = new Float32Array(this.an.frequencyBinCount);
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  stop(){
+    if (this.el){ this.el.pause(); this.el.src = ''; this.el = null; }
+    if (this.node){ try { this.node.disconnect(); } catch(e){} this.node = null; }
+    if (this.stream){ this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    this.kind = 'none'; this.kickTimes = []; this.bpm = 0;
+  },
+  async useFile(file){
+    this.ensure(); this.stop();
+    const el = new Audio(); el.src = URL.createObjectURL(file); el.loop = true; el.preload = 'auto';
+    const node = this.ctx.createMediaElementSource(el);
+    node.connect(this.an); node.connect(this.ctx.destination);
+    this.el = el; this.node = node; this.kind = 'file'; this.fileName = file.name.replace(/\.[^.]+$/, '');
+    await el.play();
+  },
+  async useMic(){
+    this.ensure();
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    this.stop();
+    this.stream = stream; this.node = this.ctx.createMediaStreamSource(stream); this.node.connect(this.an); this.kind = 'mic';
+  },
+  live(){ return this.kind === 'mic' || (this.kind === 'file' && this.el && !this.el.paused); },
+  kick(now, amt){ this.env.kick = Math.max(this.env.kick, amt); lastKickT = now; onBeat(); },
+  update(dt, now){
+    const E = this.env;
+    E.kick *= Math.exp(-dt*6); E.hat *= Math.exp(-dt*11);
+    if (!this.live()){
+      if (state.ghost){
+        const prev = this.ghostPhase;
+        this.ghostPhase += dt*122/60;
+        if (this.ghostPhase >= 1){ this.ghostPhase -= 1; this.kick(now, .85); }
+        if (prev < .5 && this.ghostPhase >= .5) E.hat = .7;
+        E.bass += (.42 + .36*Math.exp(-this.ghostPhase*4) - E.bass)*Math.min(1, dt*20);
+        E.mid = .35 + .15*Math.sin(now*.9); E.high = .25 + .3*E.hat;
+        this.bpm = 122;
+      } else { const k = Math.exp(-dt*3); E.bass *= k; E.mid *= k; E.high *= k; this.bpm = 0; }
+      return;
+    }
+    const buf = this.buf; this.an.getFloatFrequencyData(buf);
+    const hz = this.ctx.sampleRate/this.an.fftSize;
+    const band = (lo, hi) => {
+      const a = Math.max(1, Math.floor(lo/hz)), b = Math.min(buf.length - 1, Math.ceil(hi/hz));
+      let s = 0; for (let i = a; i <= b; i++){ const v = buf[i]; if (v > -150){ const m = Math.pow(10, v/20); s += m*m; } }
+      return Math.sqrt(s/(b - a + 1));
+    };
+    const low = band(35, 130), mid = band(300, 2500), hi = band(5000, 12000), vals = [low, mid, hi];
+    for (let i = 0; i < 3; i++) this.pk[i] = Math.max(vals[i], this.pk[i]*Math.exp(-dt/8), 1e-5);
+    const sens = state.sens;
+    const nb = Math.min(1.2, low/this.pk[0]*sens), nm = Math.min(1.2, mid/this.pk[1]*sens), nh = Math.min(1.2, hi/this.pk[2]*sens);
+    const follow = (cur, tgt, att, rel) => cur + (tgt - cur)*(1 - Math.exp(-dt/(tgt > cur ? att : rel)));
+    E.bass = follow(E.bass, nb*nb, .02, .22); E.mid = follow(E.mid, nm, .04, .3); E.high = follow(E.high, nh, .02, .15);
+    const flux = Math.max(0, low - this.prevLow)/this.pk[0]; this.prevLow = low;
+    const hf = Math.max(0, hi - this.prevHi)/this.pk[2]; this.prevHi = hi;
+    const h = this.flux; h.push(flux); if (h.length > 45) h.shift();
+    const mean = h.reduce((a, b) => a + b, 0)/h.length;
+    const sd = Math.sqrt(h.reduce((a, b) => a + (b - mean)*(b - mean), 0)/h.length);
+    if (flux > mean + 1.4*sd + .02/sens && flux > .05/sens && now - this.lastKick > .22){
+      this.lastKick = now; this.kick(now, 1);
+      this.kickTimes.push(now); if (this.kickTimes.length > 24) this.kickTimes.shift();
+      const iois = [];
+      for (let i = 1; i < this.kickTimes.length; i++){ const d = this.kickTimes[i] - this.kickTimes[i - 1]; if (d > .27 && d < 1.5) iois.push(d); }
+      if (iois.length >= 4){
+        iois.sort((a, b) => a - b);
+        let bpm = 60/iois[iois.length >> 1];
+        while (bpm < 85) bpm *= 2; while (bpm >= 175) bpm /= 2;
+        this.bpm = this.bpm ? this.bpm + (bpm - this.bpm)*.3 : bpm;
+      }
+    }
+    const hh = this.hiFlux; hh.push(hf); if (hh.length > 30) hh.shift();
+    const hm = hh.reduce((a, b) => a + b, 0)/hh.length;
+    if (hf > hm*2.2 + .04 && now - this.lastHat > .09){ this.lastHat = now; E.hat = 1; }
+    this.shortB += (E.bass - this.shortB)*(1 - Math.exp(-dt/.4));
+    this.longB += (E.bass - this.longB)*(1 - Math.exp(-dt/7));
+    this.dropCool -= dt;
+    if (state.dropDetour && this.dropCool <= 0 && this.shortB > .5 && this.longB < .3 && this.shortB > this.longB*2.2){
+      this.dropCool = 20; requestDetour('drop');
+    }
+  },
+};
+
+/* ================================================================
+   Detour scheduling
+   ================================================================ */
+function requestDetour(why){
+  if (route.mode === 'detour' || routeKind !== 0){ if (why === 'manual') toast('Already off the main line. Wait for the rejoin.'); return; }
+  if (route.pending) return;
+  route.pending = true;
+  if (why === 'manual') toast('Taking the next side artery.');
+  syncGo();
+}
+function onBeat(){
+  beats++;
+  if (!state.auto) return;
+  const need = state.lost ? 2 : state.freq;
+  if (beats >= need*4 && route.mode === 'spine' && routeKind === 0 && !route.pending){ beats = 0; requestDetour('auto'); }
+}
+function onPiece(p, prev){
+  if (p.junction){ junctions++; legJ++; junc = 1; }
+  if (p.kind !== 0 && prev.kind === 0){
+    detours++; legJ = 1; lurch = reduceMotion ? .3 : 1; shock = reduceMotion ? 1 : 0; routeKind = p.kind; timeSinceDetour = 0;
+    setRouteText(); syncGo();
+  } else if (p.kind === 0 && prev.kind !== 0){
+    routeKind = 0; rejoinT = 2.2; beats = 0; setRouteText(); syncGo();
+  } else if (p.junction) setRouteText();
+}
+
+/* ================================================================
+   Frame
+   ================================================================ */
+function sizeCanvas(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let cw = Math.round(innerWidth*dpr), ch = Math.round(innerHeight*dpr);
+  const maxPx = 3.4e6;
+  if (cw*ch > maxPx){ const k = Math.sqrt(maxPx/(cw*ch)); cw = Math.round(cw*k); ch = Math.round(ch*k); }
+  if (canvas.width !== cw || canvas.height !== ch){ canvas.width = cw; canvas.height = ch; }
+  const qs = state.quality === 'low' ? .42 : state.quality === 'med' ? .65 : state.quality === 'high' ? 1 : renderScale;
+  uQ = state.quality === 'low' ? .2 : state.quality === 'med' ? .6 : state.quality === 'high' ? 1 : Math.min(1, Math.max(.2, (renderScale - .3)/.5));
+  iw = Math.max(64, Math.round(innerWidth*qs)); ih = Math.max(48, Math.round(innerHeight*qs));
+  ensureTargets(iw, ih);
+}
+function updateCamera(dt){
+  const p = route.at(route.i, route.d), a = route.at(route.i, route.d + 1.05);
+  const fT = v3.norm(v3.sub(a, p));
+  camF = camF ? v3.norm(v3.mix(camF, fT, 1 - Math.exp(-dt*6.5))) : fT;
+  let up = v3.sub(camUp, v3.scl(camF, v3.dot(camUp, camF)));
+  if (v3.len(up) < .05) up = Math.abs(camF[1]) < .9 ? [0, 1, 0] : [1, 0, 0];
+  up = v3.norm(up);
+  if (routeKind === 0){
+    const wu = v3.norm(v3.sub([0, 1, 0], v3.scl(camF, camF[1])));
+    if (Math.abs(camF[1]) < .95) up = v3.norm(v3.mix(up, wu, 1 - Math.exp(-dt*.7)));
+  }
+  camUp = up; camPos = p; camR = v3.norm(v3.cross(up, camF));
+}
+function step(dt){
+  clock += dt; timeSinceDetour += dt;
+  audio.update(dt, clock);
+  if (state.auto && clock - lastKickT > 4 && route.mode === 'spine' && routeKind === 0 && !route.pending && timeSinceDetour > (state.lost ? 3 : state.freq*2)) requestDetour('auto');
+  const E = audio.env;
+  lurch *= Math.exp(-dt*1.8); junc *= Math.exp(-dt*5); if (shock < 1) shock = Math.min(1, shock + dt/.9);
+  if (rejoinT > 0 && (rejoinT -= dt) <= 0) setRouteText();
+  const inDetour = routeKind !== 0;
+  speedNow = state.speed*(1 + .3*E.bass + .7*E.kick)*(inDetour ? .82 : 1)*(1 + lurch*.9);
+  route.advance(3.4*speedNow*dt, onPiece);
+  const near = route.kindAt(0) || route.kindAt(1) || route.kindAt(2) || route.kindAt(-1) || route.kindAt(-2);
+  widen += ((near ? 1 : 0) - widen)*(1 - Math.exp(-dt*2.5));
+  updateCamera(dt);
+  const k = 1 - Math.exp(-dt*7);
+  look[0] += (lookTarget[0] - look[0])*k; look[1] += (lookTarget[1] - look[1])*k;
+  const last = hist[hist.length - 1];
+  if (!last || v3.dist(last.p, camPos) > .3){ hist.push({p:camPos, k:routeKind}); if (hist.length > 220) hist.shift(); }
+}
+function render(){
+  sizeCanvas();
+  if (![sceneP, fxP, brightP, downP, upP, finalP].every(ready)) return false;
+  const E = audio.env, pal = PALETTES.find(p => p.id === state.palette);
+  const shake = reduceMotion ? 0 : E.kick*.01;
+  const camM = [camR[0], camR[1], camR[2], ...v3.cross(camF, camR), camF[0], camF[1], camF[2]];
+  target(RT.scene); gl.useProgram(sceneP.p);
+  const P = sceneP;
+  f2(P, 'uRes', iw, ih); f1(P, 'uTime', clock); f1(P, 'uKick', E.kick); f1(P, 'uBass', E.bass); f1(P, 'uHat', E.hat);
+  f1(P, 'uQ', uQ); f1(P, 'uFov', 1.12 + .28*widen + lurch*.12); f1(P, 'uTubeR', TUBE_R); f1(P, 'uChanC', state.chanC); f1(P, 'uWiden', widen);
+  f1(P, 'uWave', (clock - lastKickT)*17); f1(P, 'uJunc', junc); f1(P, 'uCurve', CURVE);
+  f3(P, 'uCamPos', camPos); m3(P, 'uCamRot', camM);
+  f3(P, 'uColT', pal.T); f3(P, 'uColA', pal.A); f3(P, 'uColB', pal.B);
+  f2(P, 'uLook', look[0] + (Math.random() - .5)*shake, look[1] + (Math.random() - .5)*shake);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const cur = RT.fx[RT.ping], prev = RT.fx[1 - RT.ping]; RT.ping = 1 - RT.ping;
+  target(cur); gl.useProgram(fxP.p);
+  tex2(0, RT.scene.tex); i1(fxP, 'uScene', 0); tex2(1, prev.tex); i1(fxP, 'uPrev', 1);
+  f2(fxP, 'uRes', iw, ih); f1(fxP, 'uShock', shock); f1(fxP, 'uTrail', Math.min(.95, .3*state.trail));
+  f1(fxP, 'uBlur', Math.min(3, .45*speedNow + E.kick*1.2 + lurch*1.5)); f1(fxP, 'uCA', .35 + E.kick + E.hat*.4 + lurch*.8); f1(fxP, 'uSpin', .004*Math.sin(clock*.3));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const B = RT.bloom;
+  target(B[0]); gl.useProgram(brightP.p); tex2(0, cur.tex); i1(brightP, 'uSrc', 0); f2(brightP, 'uTexel', 1/cur.w, 1/cur.h); f1(brightP, 'uTh', .7);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(downP.p); i1(downP, 'uSrc', 0);
+  for (let i = 1; i < B.length; i++){ target(B[i]); tex2(0, B[i - 1].tex); f2(downP, 'uTexel', 1/B[i - 1].w, 1/B[i - 1].h); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(upP.p); i1(upP, 'uSrc', 0);
+  for (let i = B.length - 1; i > 0; i--){ target(B[i - 1]); tex2(0, B[i].tex); f2(upP, 'uTexel', 1/B[i].w, 1/B[i].h); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.disable(gl.BLEND);
+  target(null); gl.useProgram(finalP.p);
+  tex2(0, cur.tex); i1(finalP, 'uFx', 0); tex2(1, B[0].tex); i1(finalP, 'uBloom', 1); tex2(2, blueTex); i1(finalP, 'uBlue', 2);
+  f2(finalP, 'uRes', canvas.width, canvas.height); f1(finalP, 'uTime', clock); f1(finalP, 'uKick', E.kick);
+  f1(finalP, 'uFlash', reduceMotion ? 0 : lurch*.18); f1(finalP, 'uBloomAmt', .95*(1 + .5*E.kick)); f1(finalP, 'uExposure', 1.2*(1 + .12*E.kick));
+  i1(finalP, 'uLook', LOOKS.find(l => l.id === state.look).n);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return true;
+}
+
+let ema = 1/60, slowT = 0, fastT = 0, last = performance.now(), frames = 0, perfT = 0;
+function adapt(dt){
+  ema += (dt - ema)*.08;
+  if (state.quality !== 'auto') return;
+  if (ema > 1/42){ slowT += dt; fastT = 0; if (slowT > .6){ renderScale = Math.max(.3, renderScale*.88); slowT = 0; } }
+  else if (ema < 1/57){ fastT += dt; slowT = 0; if (fastT > 2.5){ renderScale = Math.min(1, renderScale*1.06); fastT = 0; } }
+  else { slowT = 0; fastT = 0; }
+}
+function loop(now){
+  const dt = Math.min(.1, Math.max(0, (now - last)/1000)); last = now;
+  step(dt); render(); adapt(dt); hudTick(dt);
+  requestAnimationFrame(loop);
+}
+
+/* ================================================================
+   HUD
+   ================================================================ */
+const hud = $('#hud'), sheet = $('#sheet'), toastEl = $('#toast'), mapC = $('#map'), mctx = mapC.getContext('2d');
+const bars = [...document.querySelectorAll('#bars i')], bpmEl = $('#bpm'), srcEl = $('#src');
+let idleTimer = 0, toastTimer = 0, openTab = null, meterT = 0;
+const css = c => 'rgb(' + c.map(v => Math.round(Math.min(1, v)*255)).join(',') + ')';
+function toast(msg, secs = 3.2){ toastEl.textContent = msg; toastEl.classList.add('show'); toastTimer = secs; }
+function wake(){ idleTimer = 0; hud.classList.remove('idle'); }
+function setRouteText(){
+  const pal = PALETTES.find(p => p.id === state.palette), h = $('#route'), dsc = $('#routeDesc');
+  if (routeKind !== 0){
+    const nm = routeKind === 1 ? pal.an : pal.bn;
+    h.textContent = 'Detour'; h.classList.add('detour');
+    h.style.setProperty('--route-color', css(routeKind === 1 ? pal.A : pal.B));
+    dsc.textContent = 'Off the main line, through the ' + nm + ' labyrinth. Junction ' + legJ + '.';
+  } else if (rejoinT > 0){
+    h.textContent = 'Rejoining'; h.classList.remove('detour');
+    dsc.textContent = 'Back on the main line after ' + legJ + (legJ === 1 ? ' junction.' : ' junctions.');
+  } else {
+    h.textContent = 'Main line'; h.classList.remove('detour');
+    dsc.textContent = route.pending ? 'A detour is coming up. Watch the walls for the opening.' : 'Following the main tunnel. Side arteries open off the walls on both sides.';
+  }
+  $('#ident').style.opacity = '';
+}
+function syncGo(){ $('#goBtn').classList.toggle('armed', route.pending); if (route.pending && routeKind === 0) setRouteText(); }
+function drawMap(){
+  const W = mapC.width, H = mapC.height, pal = PALETTES.find(p => p.id === state.palette);
+  mctx.clearRect(0, 0, W, H);
+  const sc = W/22, cx = W/2, cy = H*.64;
+  const proj = p => { const d = v3.sub(p, camPos); return [cx + v3.dot(d, camR)*sc, cy - v3.dot(d, camF)*sc]; };
+  // main line axis
+  mctx.lineWidth = W*.05; mctx.lineCap = 'round'; mctx.strokeStyle = 'rgba(255,255,255,.06)';
+  mctx.beginPath();
+  const z0 = camPos[2];
+  for (let z = z0 - 14; z <= z0 + 14; z += .5){ const q = proj(spine(z)); z === z0 - 14 ? mctx.moveTo(q[0], q[1]) : mctx.lineTo(q[0], q[1]); }
+  mctx.stroke();
+  // planned path
+  mctx.setLineDash([W*.02, W*.025]); mctx.lineWidth = W*.012;
+  let pr = proj(camPos);
+  for (let s = .4; s < 12; s += .4){
+    const q = proj(route.at(route.i, route.d + s));
+    mctx.strokeStyle = 'rgba(255,255,255,.45)';
+    mctx.beginPath(); mctx.moveTo(pr[0], pr[1]); mctx.lineTo(q[0], q[1]); mctx.stroke(); pr = q;
+  }
+  mctx.setLineDash([]);
+  // trail
+  mctx.lineWidth = W*.018;
+  for (let i = 1; i < hist.length; i++){
+    const a = proj(hist[i - 1].p), b = proj(hist[i].p), k = hist[i].k;
+    mctx.globalAlpha = .25 + .75*i/hist.length;
+    mctx.strokeStyle = css(k === 0 ? pal.T : k === 1 ? pal.A : pal.B);
+    mctx.beginPath(); mctx.moveTo(a[0], a[1]); mctx.lineTo(b[0], b[1]); mctx.stroke();
+  }
+  mctx.globalAlpha = 1;
+  mctx.fillStyle = '#fff'; mctx.beginPath(); mctx.arc(cx, cy, W*.028, 0, Math.PI*2); mctx.fill();
+  mctx.fillStyle = 'rgba(255,255,255,.5)';
+  mctx.beginPath(); mctx.moveTo(cx, cy - W*.075); mctx.lineTo(cx - W*.03, cy - W*.035); mctx.lineTo(cx + W*.03, cy - W*.035); mctx.fill();
+}
+function hudTick(dt){
+  if (toastTimer > 0 && (toastTimer -= dt) <= 0) toastEl.classList.remove('show');
+  if (!openTab){ idleTimer += dt; if (idleTimer > 8) hud.classList.add('idle'); }
+  meterT += dt;
+  if (meterT > 1/30){
+    meterT = 0;
+    const E = audio.env, vals = [E.kick, E.bass, E.mid, E.high, E.hat];
+    bars.forEach((b, i) => { b.style.transform = 'scaleY(' + (.08 + .92*Math.min(1, vals[i])).toFixed(3) + ')'; });
+    const bpm = audio.bpm ? Math.round(audio.bpm) : '—';
+    if (bpmEl.textContent !== String(bpm)) bpmEl.textContent = bpm;
+    const src = audio.kind === 'file' ? (audio.el && audio.el.paused ? 'Paused · ' : '') + audio.fileName : audio.kind === 'mic' ? 'Mic / line-in' : state.ghost ? 'Ghost beat' : 'No audio';
+    if (srcEl.textContent !== src) srcEl.textContent = src;
+    $('#statDetours').textContent = detours; $('#statJunctions').textContent = junctions;
+    $('#lblDetours').textContent = detours === 1 ? 'detour' : 'detours'; $('#lblJunctions').textContent = junctions === 1 ? 'junction' : 'junctions';
+    if (!hud.classList.contains('idle') && !hud.classList.contains('off')) drawMap();
+  }
+  perfT += dt; frames++;
+  if (perfT > 1){ if (openTab === 'tune') $('#perf').textContent = Math.round(frames/perfT) + ' fps · rendering ' + iw + '×' + ih + ' and scaling up' + (floatOK ? '' : ' · 8-bit buffers on this device'); perfT = 0; frames = 0; }
+}
+function applyPaletteVars(){
+  const pal = PALETTES.find(p => p.id === state.palette), r = document.documentElement.style;
+  r.setProperty('--a', css(pal.A)); r.setProperty('--b', css(pal.B)); r.setProperty('--gold', css(pal.T.map(v => .55 + .45*v)));
+}
+function buildUI(){
+  const pc = $('#paletteChips');
+  PALETTES.forEach(p => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.v = p.id;
+    const sw = document.createElement('span'); sw.className = 'swatch';
+    [p.T, p.A, p.B].forEach(c => { const i = document.createElement('i'); i.style.background = css(c); sw.appendChild(i); });
+    b.appendChild(sw); b.appendChild(document.createTextNode(p.name));
+    b.addEventListener('click', () => { state.palette = p.id; store.set('palette', p.id); syncUI(); });
+    pc.appendChild(b);
+  });
+  const lc = $('#lookChips');
+  LOOKS.forEach(l => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.v = l.id; b.textContent = l.name;
+    b.addEventListener('click', () => { state.look = l.id; store.set('look', l.id); syncUI(); });
+    lc.appendChild(b);
+  });
+  document.querySelectorAll('.dock [data-tab]').forEach(b => b.addEventListener('click', () => toggleTab(b.dataset.tab)));
+  $('#goBtn').addEventListener('click', () => requestDetour('manual'));
+  $('#autoBtn').addEventListener('click', () => { state.auto = !state.auto; beats = 0; syncUI(); toast(state.auto ? 'Auto detours on.' : 'Auto detours off. Press Detour or Space to take one.'); });
+  const seg = (id, key, parse, after) => $(id).querySelectorAll('button').forEach(b => b.addEventListener('click', () => { state[key] = parse(b.dataset.v); store.set(key, state[key]); after && after(); syncUI(); }));
+  seg('#freq', 'freq', Number, () => { state.lost = state.freq === 0; beats = 0; });
+  seg('#dlen', 'dlen', String); seg('#width', 'chanC', Number); seg('#quality', 'quality', String);
+  const range = id => { const el = $('#' + id); el.value = state[id]; el.addEventListener('input', () => { state[id] = Number(el.value); store.set(id, state[id]); syncUI(); }); };
+  range('speed'); range('trail'); range('sens');
+  $('#ghost').checked = state.ghost; $('#ghost').addEventListener('change', e => { state.ghost = e.target.checked; store.set('ghost', state.ghost); });
+  $('#dropDetour').checked = state.dropDetour; $('#dropDetour').addEventListener('change', e => { state.dropDetour = e.target.checked; store.set('dropDetour', state.dropDetour); });
+  $('#file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadTrack(f); e.target.value = ''; });
+  $('#micBtn').addEventListener('click', async () => {
+    try { await audio.useMic(); toast('Listening to the mic or line-in.'); syncUI(); }
+    catch(err){ toast('The mic is blocked here. Load a track instead, or serve this folder locally (python3 -m http.server) and open it from localhost.', 6); }
+  });
+  $('#playBtn').addEventListener('click', () => { if (!audio.el) return; if (audio.el.paused){ audio.ensure(); audio.el.play(); } else audio.el.pause(); syncUI(); });
+  $('#fsBtn').addEventListener('click', toggleFS);
+  $('#hideBtn').addEventListener('click', () => { toggleTab(null); hud.classList.add('off'); toast('Controls hidden. Tap the screen to bring them back.'); });
+}
+async function loadTrack(f){
+  try { await audio.useFile(f); toast('Playing ' + audio.fileName + '. The BPM settles after a few bars.'); }
+  catch(err){ toast("That file wouldn't play here. Try an MP3 or WAV.", 5); }
+  syncUI();
+}
+function toggleTab(tab){
+  openTab = openTab === tab ? null : tab;
+  sheet.hidden = !openTab;
+  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.dataset.panel !== openTab; });
+  document.querySelectorAll('.dock [data-tab]').forEach(b => b.classList.toggle('open', b.dataset.tab === openTab));
+  wake();
+}
+function syncUI(){
+  const pressed = (sel, v) => document.querySelectorAll(sel + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v) === String(v)));
+  pressed('#paletteChips', state.palette); pressed('#lookChips', state.look); pressed('#freq', state.freq); pressed('#dlen', state.dlen);
+  pressed('#width', state.chanC); pressed('#quality', state.quality);
+  $('#autoBtn').setAttribute('aria-pressed', state.auto);
+  const fmt = v => Number(v).toFixed(2).replace(/0$/, '') + '×';
+  $('#speedOut').textContent = fmt(state.speed); $('#trailOut').textContent = fmt(state.trail); $('#sensOut').textContent = fmt(state.sens);
+  $('#paletteName').textContent = PALETTES.find(p => p.id === state.palette).name;
+  $('#lookName').textContent = LOOKS.find(l => l.id === state.look).name;
+  $('#playBtn').hidden = audio.kind !== 'file';
+  if (audio.el) $('#playBtn').textContent = audio.el.paused ? 'Play' : 'Pause';
+  $('#vhs').hidden = state.look !== 'vhs';
+  applyPaletteVars(); setRouteText(); syncGo();
+}
+function toggleFS(){
+  const d = document;
+  if (!d.fullscreenElement){ const r = d.documentElement.requestFullscreen && d.documentElement.requestFullscreen(); if (r && r.catch) r.catch(() => toast('Fullscreen is not available in this view.')); else if (!r) toast('Fullscreen is not available in this view.'); }
+  else d.exitFullscreen && d.exitFullscreen();
+}
+(() => { const d = new Date(); $('#vhsDate').textContent = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()] + ' ' + String(d.getDate()).padStart(2, '0') + ' 1997'; })();
+
+/* ---------- input ---------- */
+let drag = null, wakeLock = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = {x:e.clientX, y:e.clientY, t:performance.now(), moved:false};
+  try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+  audio.ctx && audio.ctx.state === 'suspended' && audio.ctx.resume();
+  if (!wakeLock && navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { wakeLock = l; }).catch(() => {});
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 8) drag.moved = true;
+  lookTarget = [Math.max(-.7, Math.min(.7, dx/innerWidth*1.4)), Math.max(-.6, Math.min(.6, -dy/innerHeight*1.2))];
+});
+const endDrag = () => {
+  if (drag && !drag.moved && performance.now() - drag.t < 350){
+    if (openTab) toggleTab(null);
+    else if (hud.classList.contains('off') || hud.classList.contains('idle')){ hud.classList.remove('off'); wake(); }
+    else hud.classList.add('idle');
+  }
+  drag = null; lookTarget = [0, 0];
+};
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+document.addEventListener('pointermove', e => { if (e.target !== canvas) wake(); });
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'range') return;
+  const k = e.key.toLowerCase();
+  if (k === ' '){ e.preventDefault(); requestDetour('manual'); }
+  else if (k === 'a') $('#autoBtn').click();
+  else if (k === 'p'){ const i = PALETTES.findIndex(p => p.id === state.palette); state.palette = PALETTES[(i + 1) % PALETTES.length].id; store.set('palette', state.palette); toast('Palette: ' + PALETTES.find(p => p.id === state.palette).name); }
+  else if (k === 'l'){ const i = LOOKS.findIndex(l => l.id === state.look); state.look = LOOKS[(i + 1) % LOOKS.length].id; store.set('look', state.look); toast('Look: ' + LOOKS.find(l => l.id === state.look).name); }
+  else if (k === 'arrowup'){ e.preventDefault(); state.speed = Math.min(3, +(state.speed + .1).toFixed(2)); $('#speed').value = state.speed; store.set('speed', state.speed); }
+  else if (k === 'arrowdown'){ e.preventDefault(); state.speed = Math.max(.25, +(state.speed - .1).toFixed(2)); $('#speed').value = state.speed; store.set('speed', state.speed); }
+  else if (k === 'h') hud.classList.toggle('off');
+  else if (k === 'f') toggleFS();
+  else return;
+  wake(); syncUI();
+});
+const dropEl = $('#drop');
+window.addEventListener('dragover', e => { e.preventDefault(); dropEl.hidden = false; });
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) dropEl.hidden = true; });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dropEl.hidden = true;
+  const f = [...(e.dataTransfer && e.dataTransfer.files || [])].find(f => /^audio\//.test(f.type) || /\.(mp3|wav|aiff?|flac|m4a|ogg)$/i.test(f.name));
+  if (f) loadTrack(f); else toast('Drop an audio file: MP3, WAV, AIFF or FLAC.');
+});
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); toast('The graphics context was lost. Reload the page to restart.', 8); });
+
+/* ---------- boot ---------- */
+buildUI(); syncUI();
+updateCamera(1/60);
+
+window.__nx = {
+  errors,
+  compile(){ [sceneP, fxP, brightP, downP, upP, finalP].forEach(P => { gl.getProgramParameter(P.p, gl.LINK_STATUS); ready(P); }); return errors.slice(); },
+  sim(seconds, o = {}){
+    // advance the whole simulation deterministically at 60 fps; force a detour at the start if asked
+    state.quality = 'high'; renderScale = 1;
+    if (o.palette) state.palette = o.palette; if (o.look) state.look = o.look; if (o.dlen) state.dlen = o.dlen;
+    if (o.freq != null){ state.freq = o.freq; state.lost = o.freq === 0; }
+    if (o.detour) requestDetour('test');
+    const log = [];
+    let minClear = 9;
+    for (let f = 0; f < seconds*60; f++){
+      step(1/60);
+      const vc = voidAt(camPos);
+      if (vc < minClear){ minClear = vc; const pp = k => route.pts[route.i + k] || {}; this.worst = {vc:+vc.toFixed(3), prev:[pp(-1).kind, !!pp(-1).forced, !!pp(-1).rejoin], cur:[pp(0).kind, !!pp(0).forced, !!pp(0).rejoin], next:[pp(1).kind, !!pp(1).forced], u:+(route.d/route.plen(route.i)).toFixed(2), tube:+tubeV(camPos).toFixed(2), chan:+chanV(camPos).toFixed(2)}; }
+      if (f % 30 === 0) log.push(routeKind);
+    }
+    return {kinds:log.join(''), detours, junctions, minClear:+minClear.toFixed(3), mode:route.mode, worst:this.worst};
+  },
+  shot(o = {}){ if (o.palette) state.palette = o.palette; if (o.look) state.look = o.look; for (let k = 0; k < 4; k++) render(); return canvas.toDataURL("image/png"); },
+  status(){ return {routeKind, mode:route.mode, pending:route.pending, detours, junctions, cam:camPos.map(v => +v.toFixed(2)), widen:+widen.toFixed(2), bpm:audio.bpm}; },
+};
+if (!TEST) requestAnimationFrame(t => { last = t; loop(t); });
+})();
+</script>
+</body>
+</html>
