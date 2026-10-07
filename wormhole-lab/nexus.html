@@ -98,8 +98,8 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold)}
   font:400 clamp(18px,4vw,34px) var(--f-display);color:var(--gold);background:rgba(4,5,10,.55);pointer-events:none;z-index:6}
 #vhs{position:fixed;left:calc(16px + 2vw);bottom:calc(env(safe-area-inset-bottom,0px) + 86px);font:600 clamp(16px,3.4vw,30px)/1.3 "Courier New",ui-monospace,monospace;
   color:#f4f4f4;text-shadow:2px 0 #ff2a6d,-2px 0 #2de2ff;letter-spacing:.06em;pointer-events:none;display:flex;flex-direction:column}
-#card{position:fixed;left:0;right:0;top:42%;transform:translateY(-50%);text-align:center;pointer-events:none;z-index:1;
-  font:400 clamp(30px,9vw,104px)/1 var(--f-display);letter-spacing:.08em;color:var(--ink);opacity:0;transition:opacity .25s;
+#card{position:fixed;left:0;right:0;top:42%;transform:translateY(-50%);text-align:center;pointer-events:none;z-index:3;
+  font:400 clamp(28px,min(9vw,14vh),104px)/1 var(--f-display);letter-spacing:.08em;color:var(--ink);opacity:0;transition:opacity .25s;
   text-shadow:0 0 28px var(--a),0 0 60px rgba(0,0,0,.6)}
 #card small{display:block;font:600 clamp(11px,1.6vw,15px)/1.4 var(--f-ui);letter-spacing:.34em;color:var(--gold);margin-bottom:.6em}
 #card.show{opacity:1}
@@ -135,7 +135,7 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold)}
   <div class="bottom">
     <section id="sheet" class="sheet" hidden>
       <div class="panel" data-panel="palette"><div class="chips" id="paletteChips"></div>
-        <p class="hint">Each palette colors the main tunnel and the two labyrinths it cuts through. The route map and status use the same colors.</p></div>
+        <p class="hint">Each palette colors the tunnel and the two labyrinths it cuts through. The route map and status use the same colors.</p></div>
       <div class="panel" data-panel="look" hidden><div class="chips" id="lookChips"></div>
         <p class="hint">Looks are applied after the render, so they work with any palette. GIF dither matches the screenshot that started all this.</p></div>
       <div class="panel" data-panel="audio" hidden>
@@ -154,7 +154,7 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold)}
       </div>
       <div class="panel" data-panel="tune" hidden>
         <div class="seg"><span>Turns</span><div id="timing"><button data-v="rare">Rare</button><button data-v="random">Random</button><button data-v="often">Often</button><button data-v="beat">On the beat</button></div></div>
-        <p class="hint" id="timingHint">Random: a turn every 3 to 20 seconds, never on a pattern.</p>
+        <p class="hint" id="timingHint">Random: a turn every 4 to 20 seconds, never on a pattern.</p>
         <div class="seg"><span>Artery run</span><div id="artery"><button data-v="short">Short</button><button data-v="medium">Medium</button><button data-v="long">Long</button></div></div>
         <div class="seg"><span>Branch cards</span><div id="cards"><button data-v="on">On</button><button data-v="off">Off</button></div></div>
         <div class="seg"><span>Side arteries</span><div id="width"><button data-v="0.76">Narrow</button><button data-v="0.62">Normal</button><button data-v="0.48">Wide</button></div></div>
@@ -243,7 +243,7 @@ float legV(int i, vec3 p){
   float ramp = X.y > .5 ? smoothstep(0., 24., z) : 1.;
   vec2 w = uLR[i].w*(wig(z + uLF[i].w) - X.zw)*ramp;
   float R = (uTubeR + .3*sin(z*.20943951 + uLF[i].w))*X.x;
-  return R - length(vec3(l.xy - w, l.z - z));
+  return R - length(vec3(l.xy - w, l.z - z)) - .3*(1. - smoothstep(0., .15, X.x));
 }
 float mapN(vec3 p, out float g, out float tb, out float ch){
   tb = legV(0, p);
@@ -653,7 +653,7 @@ const audio = {
     this.longB += (E.bass - this.longB)*(1 - Math.exp(-dt/7));
     this.dropCool -= dt;
     if (state.dropTurn && this.dropCool <= 0 && this.shortB > .5 && this.longB < .3 && this.shortB > this.longB*2.2){
-      this.dropCool = 20; requestTurn('drop');
+      this.dropCool = 20; dropHit();
     }
   },
 };
@@ -692,7 +692,7 @@ class Leg {
   radial(p){ const l = this.local(p), w = this.w(Math.max(0, l[2])); return Math.hypot(l[0] - w[0], l[1] - w[1]); }
   voidAt(p, open = this.open){
     const l = this.local(p), z = Math.min(this.len, Math.max(0, l[2])), w = this.w(z);
-    return (TUBE_R + .3*Math.sin(z*W30 + this.ph))*open - Math.hypot(l[0] - w[0], l[1] - w[1], l[2] - z);
+    return (TUBE_R + .3*Math.sin(z*W30 + this.ph))*open - Math.hypot(l[0] - w[0], l[1] - w[1], l[2] - z) - .3*(1 - smooth(0, .15, open));
   }
   tangent(z){ return v3.norm(v3.sub(this.point(z + .05), this.point(z - .05))); }
   shift(){ this.O = v3.add(this.O, v3.scl(this.f, PERIOD)); this.ramp = false; }   // identical tube ahead, keeps lz small
@@ -722,7 +722,7 @@ class Route {
     for (let k = 0; k < 4; k++) this.pushLeg();
   }
   pushLeg(){
-    const pt = {p:this.cur.point(this.zGen), kind:0, leg:this.cur};
+    const pt = {p:this.cur.point(this.zGen), kind:0, leg:this.cur, z:this.zGen};
     if (this.startFlag){ pt.legStart = true; this.startFlag = false; }
     this.pts.push(pt); this.zGen += 1;
   }
@@ -735,7 +735,7 @@ class Route {
         const n = [a, b, k], s = vSign(n);
         if (!s) continue;
         const w = vWorld(n), l = leg.local(w), r = leg.radial(w);
-        if (l[2] < z + .4 || l[2] > z + 3 || r < .5 || r > TUBE_R + 1.1) continue;
+        if (l[2] < z + .4 || l[2] > z + 3 || r < TUBE_R - .25 || r > TUBE_R + 1.1) continue;
         if (!neighbours(n, s).some(m => leg.radial(vWorld(m)) > r + .3)) continue;
         if (!clear(c, w, .3)) continue;
         // prefer openings along the screen's long axis: they enter view earlier and read as turns
@@ -760,10 +760,11 @@ class Route {
     const pick = (cur, prv, exit) => {
       let best = null, bs = -1e9;
       const cw = vWorld(cur), rc = old.radial(cw);
+      const inDir = v3.norm(v3.sub(cw, prv ? vWorld(prv) : e.c));   // keep each corner gentle relative to how we arrived
       for (const m of neighbours(cur, s)){
         if (prv && vKey(m) === vKey(prv)) continue;
         const mw = vWorld(m), dir = v3.norm(v3.sub(mw, cw));
-        let sc = (old.radial(mw) - rc)*1.2 + v3.dot(dir, fOld)*.35 + Math.random()*.6;
+        let sc = (old.radial(mw) - rc)*1.2 + v3.dot(dir, fOld)*.35 + v3.dot(dir, inDir)*.8 + Math.random()*.6;
         if (seen.has(vKey(m))) sc -= 4;
         if (exit && v3.dot(dir, fOld) < -.5) sc -= 2;   // never head back the way we came
         if (sc > bs){ bs = sc; best = m; }
@@ -771,7 +772,25 @@ class Route {
       return best;
     };
     for (let k = 0; k < extra; k++){ const m = pick(n, prev, false); prev = n; n = m; verts.push(n); seen.add(vKey(n)); }
-    const N = pick(n, prev, true), Vn = vWorld(n), fNew = v3.norm(v3.sub(vWorld(N), Vn));
+    const along = (a, b) => v3.dot(v3.norm(v3.sub(vWorld(b), vWorld(a))), fOld);
+    const exitFrom = () => {
+      let m = pick(n, prev, true);
+      if (along(n, m) < -.3){   // a hairpin back the way we came: take the other branch if it is better
+        const alt = neighbours(n, s).find(q => !(prev && vKey(q) === vKey(prev)) && vKey(q) !== vKey(m));
+        if (alt && along(n, alt) > along(n, m)) m = alt;
+      }
+      return m;
+    };
+    const step1 = m => { prev = n; n = m; verts.push(n); seen.add(vKey(n)); };
+    let N = exitFrom();
+    // carrying straight on alongside the old tunnel is not a turn: go one junction further, where the edges bend 60°
+    if (along(n, N) > .8){ step1(N); N = exitFrom(); }
+    // a short run that has to bend more than 70° right at the wall goes one junction deeper to round the corner
+    else if (verts.length === 1){
+      const inDir = v3.norm(v3.sub(vWorld(n), e.c)), outDir = v3.norm(v3.sub(vWorld(N), vWorld(n)));
+      if (v3.dot(inDir, outDir) < .34){ step1(N); N = exitFrom(); if (along(n, N) > .8){ step1(N); N = exitFrom(); } }
+    }
+    const Vn = vWorld(n), fNew = v3.norm(v3.sub(vWorld(N), Vn));
     let up = v3.sub(old.u, v3.scl(fNew, v3.dot(old.u, fNew)));
     if (v3.len(up) < .2) up = v3.sub(old.r, v3.scl(fNew, v3.dot(old.r, fNew)));
     const leg = new Leg(Vn, fNew, v3.norm(up), Math.random()*PERIOD, .8, true, 0);
@@ -784,8 +803,16 @@ class Route {
     const clock = ((Math.round(Math.atan2(v3.dot(toV, camR), v3.dot(toV, camU))/(2*Math.PI)*12) % 12) + 12) % 12 || 12;
     const d1 = v3.norm(v3.sub(V0, e.c));
     const ang = d => Math.atan2(v3.dot(d, camR), v3.dot(d, camF));
-    this.plan = {leg, old, V0, kind, clock, bendIn:ang(d1), bendOut:ang(fNew) - ang(d1), entered:false};
+    this.plan = {leg, old, V0, c:e.c, kind, clock, bendIn:ang(d1), bendOut:ang(fNew) - ang(d1), entered:false, angle:Math.acos(Math.max(-1, Math.min(1, v3.dot(fNew, fOld))))*180/Math.PI, wallR:old.radial(V0)};
     this.pending = false;
+  }
+  // drop the not-yet-travelled points of the current leg so the next turn is searched for close to the camera
+  replan(extra = 0){
+    const keep = this.i + 3 + extra;
+    if (this.plan || this.pts.length <= keep) return;
+    for (let k = keep - 1; k < this.pts.length; k++){ const p = this.pts[k]; if (p.kind !== 0 || p.leg !== this.cur || p.z == null || p.grow || p.legStart) return; }
+    const zLast = this.pts[keep - 1].z;
+    this.pts.length = keep; this.lens.length = Math.min(this.lens.length, keep - 1); this.zGen = zLast + 1;
   }
   extend(){
     if (this.pending && !this.plan){
@@ -822,12 +849,12 @@ const store = {
   get(k, d){ try { const v = localStorage.getItem('nxr:' + k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } },
   set(k, v){ try { localStorage.setItem('nxr:' + k, JSON.stringify(v)); } catch(e){} },
 };
-const TIMING = {rare:[10, 40], random:[3, 20], often:[3, 8], beat:[8, 16]};
+const TIMING = {rare:[10, 40], random:[3, 20], often:[4, 9], beat:[8, 16]};
 const TIMING_HINT = {
   rare:'Rare: a turn every 10 to 40 seconds.',
-  random:'Random: a turn every 3 to 20 seconds, never on a pattern.',
-  often:'Often: a turn every 3 to 8 seconds.',
-  beat:'On the beat: a turn every 4 to 8 bars, timed to land on the music.',
+  random:'Random: a turn every 4 to 20 seconds, never on a pattern.',
+  often:'Often: a turn every 4 to 9 seconds.',
+  beat:'On the beat: a turn every few bars, and each new branch opens on a kick. Falls back to Random timing when the kicks stop.',
 };
 const state = {
   palette:store.get('palette', 'nexus'), look:store.get('look', 'clean'), timing:store.get('timing', 'random'), artery:store.get('artery', 'medium'),
@@ -848,27 +875,36 @@ let widen = 0, junc = 0, shock = 1, lurch = 0, lastKickT = -9, beats = 0, beatsS
 let turns = 0, branch = 1, routeKind = 0, traveled = 0, cardT = 0, hist = [], segs = [{kind:0, len:0, bend:0}];
 const origin = [0, 0, 0], GP = 2*Math.PI/GSCALE;
 const turnLog = [];
+let reqT = 0, lead = 2.6, lastEnterT = 0, fxDue = 0, dropQueued = false, queuedTurn = false;
 const TUNE = {brakeSpeed:2, laBrake:3, smoothBrake:4};
 
 /* ================================================================
    Turn scheduling
    ================================================================ */
+// gaps are measured dive to dive; the request goes out early by the measured planning lead
 function scheduleNext(){
   const r = TIMING[state.timing];
-  nextTurnAt = clock + r[0] + Math.random()*(r[1] - r[0]) - 1.4;   // the planner looks ~1.5 s ahead
-  beatsSince = 0; barsTarget = 4 + Math.floor(Math.random()*5);
+  nextTurnAt = Math.max(clock, lastEnterT + r[0] + Math.random()*(r[1] - r[0]) - lead);
+  barsTarget = 4 + Math.floor(Math.random()*5);
 }
 function requestTurn(why){
-  if (route.plan || route.pending){ if (why === 'manual') toast('Already turning. The next one can go once this branch opens up.'); return; }
-  route.pending = true;
-  if (why === 'drop' && !reduceMotion) lurch = Math.max(lurch, .5);
+  if (route.plan || route.pending){ if (why === 'manual') toast('Already turning. The next one can go once this branch opens up.'); return false; }
+  route.pending = true; reqT = clock;
+  route.replan(Math.round(Math.max(0, rate - 3.4)*.7)); route.ensure(route.i + 6);   // at high speed, plan far enough ahead to brake
   turnLog.push({t:clock, why});
   syncGo(); setRouteText();
+  return true;
 }
-function onBeat(){ beats++; beatsSince++; }
+function dropHit(){
+  if (!reduceMotion) lurch = Math.max(lurch, .5);
+  if (!requestTurn('drop')) dropQueued = true;
+}
+function punch(){ turnLog.push({t:clock, why:'punch', ph:audio.ghostPhase}); showCard(); lurch = reduceMotion ? .3 : 1; shock = reduceMotion ? 1 : 0; }
+function onBeat(){ beats++; beatsSince++; if (fxDue){ fxDue = 0; punch(); } }
+const beatSync = () => state.timing === 'beat' && (audio.live() || state.ghost) && clock - lastKickT < 4;
 function autoTurn(){
   if (!state.auto || route.plan || route.pending) return;
-  if (state.timing === 'beat' && (audio.live() || state.ghost)){ if (beatsSince >= barsTarget*4 - 3) requestTurn('auto'); }
+  if (beatSync()){ if (beatsSince >= barsTarget*4 - Math.round(lead*(audio.bpm || 122)/60)) requestTurn('auto'); }
   else if (clock >= nextTurnAt) requestTurn('auto');
 }
 function onPiece(p){
@@ -876,15 +912,17 @@ function onPiece(p){
   if (p.grow && P) P.leg.target = 1;
   if (p.junction){
     junc = 1; routeKind = p.kind;
-    if (p.enter && P){ P.entered = true; P.enterT = clock; segs.push({kind:p.kind, len:0, bend:P.bendIn}); setRouteText(); }
+    if (p.enter && P){ P.entered = true; P.enterT = clock; lead += (clock - reqT - lead)*.3; lastEnterT = clock; beatsSince = 0; turnLog.push({t:clock, why:'enter', wallR:P.wallR}); segs.push({kind:p.kind, len:0, bend:P.bendIn}); setRouteText(); }
   }
   if (p.legStart && P){
     routeKind = 0; turns++; branch++;
-    segs.push({kind:0, len:0, bend:P.bendOut}); if (segs.length > 60) segs.shift();
+    segs.push({kind:0, len:0, bend:P.bendOut}); while (segs.length > 60) segs.shift();
     P.old.dieAt = clock + .8;
-    lurch = reduceMotion ? .3 : 1; shock = reduceMotion ? 1 : 0;
-    turnLog.push({t:clock, why:'opened'});
-    route.plan = null; scheduleNext(); showCard(); setRouteText(); syncGo();
+    turnLog.push({t:clock, why:'opened', angle:P.angle});
+    route.plan = null; scheduleNext();
+    if (beatSync()) fxDue = clock + 60/(audio.bpm || 122); else punch();   // in beat mode the card and flash land on the next beat
+    if (dropQueued){ dropQueued = false; queuedTurn = true; }
+    setRouteText(); syncGo();
   }
 }
 
@@ -937,17 +975,19 @@ function step(dt){
   const E = audio.env;
   lurch *= Math.exp(-dt*1.8); junc *= Math.exp(-dt*5); if (shock < 1) shock = Math.min(1, shock + dt/.9);
   if (cardT > 0 && (cardT -= dt) <= 0) $('#card').classList.remove('show');
+  if (fxDue && clock >= fxDue){ fxDue = 0; punch(); }
   legsTick(dt);
   const brake = route.braking();
   let target = 3.4*state.speed*(1 + .3*E.bass + .7*E.kick)*(1 + lurch*.9);
-  if (brake) target = Math.min(target, TUNE.brakeSpeed);
+  if (brake) target = Math.min(target, TUNE.brakeSpeed*(state.artery === 'short' ? .75 : 1));   // short arteries bend straight out of the wall
   rate += (target - rate)*(1 - Math.exp(-dt*(brake ? 5 : 2.5)));
   speedNow = rate/3.4;
   const ds = rate*dt;
   route.advance(ds, onPiece);
+  if (queuedTurn){ queuedTurn = false; requestTurn('drop'); }
   traveled += ds; segs[segs.length - 1].len += ds;
   la += ((brake ? TUNE.laBrake : 1.05) - la)*(1 - Math.exp(-dt*3));
-  const armed = route.pending || (route.plan && !route.plan.entered);
+  const armed = !!(route.plan && !route.plan.entered);
   turnA += ((armed ? 1 : 0) - turnA)*(1 - Math.exp(-dt*(armed ? 2.5 : 9)));
   let near = false; for (let k = -2; k <= 2; k++){ const q = route.pts[route.i + k]; if (q && q.kind) near = true; }
   widen += ((near ? 1 : 0) - widen)*(1 - Math.exp(-dt*2.5));
@@ -964,7 +1004,7 @@ function render(){
   const E = audio.env, pal = PALETTES.find(p => p.id === state.palette);
   const shake = reduceMotion ? 0 : E.kick*.01;
   const camM = [camR[0], camR[1], camR[2], camU[0], camU[1], camU[2], camF[0], camF[1], camF[2]];
-  const live = legs.slice(-MAXL);
+  const live = legs.filter(L => L.open > 0).slice(-MAXL);
   live.forEach((L, i) => {
     LO.set([L.O[0] - origin[0], L.O[1] - origin[1], L.O[2] - origin[2], L.len], i*4);
     LR.set([L.r[0], L.r[1], L.r[2], L.amp], i*4); LF.set([L.f[0], L.f[1], L.f[2], L.ph], i*4);
@@ -1033,7 +1073,7 @@ const pad2 = n => String(n).padStart(2, '0');
 function toast(msg, secs = 3.2){ toastEl.textContent = msg; toastEl.classList.add('show'); toastTimer = secs; }
 function wake(){ idleTimer = 0; hud.classList.remove('idle'); }
 function showCard(){
-  if (state.cards !== 'on') return;
+  if (state.cards !== 'on' || openTab) return;
   $('#cardText').textContent = 'BRANCH ' + pad2(branch);
   $('#card').classList.add('show'); cardT = 1.3;
 }
@@ -1041,8 +1081,17 @@ function routeDesc(){
   const pal = PALETTES.find(p => p.id === state.palette), P = route.plan;
   if (routeKind !== 0 && P) return 'Through the ' + (P.kind === 1 ? pal.an : pal.bn) + ' artery. It opens into branch ' + pad2(branch + 1) + '.';
   if (P && !P.entered){
-    const secs = v3.dist(camPos, P.V0)/Math.max(rate, .5), bpm = audio.bpm || 122, b = Math.round(secs*bpm/60);
-    return 'Turning into the ' + (P.kind === 1 ? pal.an : pal.bn) + ' artery at ' + P.clock + " o'clock" + (b > 1 ? ', in ' + b + ' beats.' : ', now.');
+    const dist = v3.dist(camPos, P.V0);
+    if (!P.frozen){
+      const d1 = v3.sub(P.V0, P.c);
+      P.clock = ((Math.round(Math.atan2(v3.dot(d1, camR), v3.dot(d1, camU))/(2*Math.PI)*12) % 12) + 12) % 12 || 12;
+      if (dist < 2) P.frozen = true;
+    }
+    const where = 'Turning into the ' + (P.kind === 1 ? pal.an : pal.bn) + ' artery at ' + P.clock + " o'clock";
+    if (!audio.bpm) return where + '.';
+    const b = Math.round(dist/Math.max(.5, Math.min(rate, TUNE.brakeSpeed))*audio.bpm/60);
+    P.b = Math.min(P.b ?? Infinity, b);
+    return where + (P.b > 1 ? ', in ' + P.b + ' beats.' : ', now.');
   }
   if (route.pending) return 'Picking the next side artery.';
   return 'Side arteries open off the walls on every side.';
@@ -1075,7 +1124,7 @@ function drawMap(){
   let x = cx, y = cy, h = 0, drawn = 0;
   mctx.lineWidth = W*.022;
   for (let k = segs.length - 1; k >= 0 && drawn < 34; k--){
-    const s = segs[k], L = Math.min(s.len, 34 - drawn);
+    const s = segs[k], L = Math.min(s.len, k === segs.length - 1 ? 8 : 4.5, 34 - drawn);
     const x2 = x - Math.sin(h)*L*sc, y2 = y + Math.cos(h)*L*sc;
     mctx.globalAlpha = Math.max(.2, 1 - drawn/34);
     mctx.strokeStyle = col(s.kind); mctx.beginPath(); mctx.moveTo(x, y); mctx.lineTo(x2, y2); mctx.stroke();
@@ -1235,10 +1284,10 @@ window.__nx = {
   compile(){ [sceneP, fxP, brightP, downP, upP, finalP].forEach(P => { gl.getProgramParameter(P.p, gl.LINK_STATUS); ready(P); }); return errors.slice(); },
   // advance the whole simulation at 60 fps and report what a reviewer needs to trust it
   sim(seconds, o = {}){
-    if (o.timing) state.timing = o.timing; if (o.artery) state.artery = o.artery; if (o.speed) state.speed = o.speed; if (o.chanC) state.chanC = o.chanC;
+    if (o.timing) state.timing = o.timing; if (o.artery) state.artery = o.artery; state.speed = o.speed || 1; state.chanC = o.chanC || .62;
     if (o.turnNow) requestTurn('manual');
     if (o.tune) Object.assign(TUNE, o.tune);
-    let maxLag = 0, lags = [], frees = [];
+    let maxLag = 0, lags = [], frees = [], harsh = 0;
     let minClear = 9, minWithWiden = 9, maxLegs = 0, maxYaw = 0, yawSum = [], prevF = camF.slice(), bad = 0, worst = null;
     const t0 = turnLog.length;
     for (let f = 0; f < seconds*60; f++){
@@ -1249,17 +1298,21 @@ window.__nx = {
       minWithWiden = Math.min(minWithWiden, vw);
       maxLegs = Math.max(maxLegs, legs.length);
       const yaw = Math.acos(Math.min(1, v3.dot(prevF, camF)))*180/Math.PI*60; prevF = camF.slice();
-      maxYaw = Math.max(maxYaw, yaw); yawSum.push(yaw);
+      maxYaw = Math.max(maxYaw, yaw); yawSum.push(yaw); if (yaw > 120) harsh++;
       const tg = v3.norm(v3.sub(route.at(route.i, route.d + .3), camPos)), lag = Math.acos(Math.min(1, v3.dot(tg, camF)))*180/Math.PI; maxLag = Math.max(maxLag, lag); lags.push(lag);
       if (f % 6 === 0){ let t = .05; for (let k = 0; k < 40 && t < 6; k++){ const v = voidAt(v3.add(camPos, v3.scl(camF, t))); if (v < .01) break; t += Math.max(v*.8, .03); } frees.push(t); }
       if (![...camPos, ...camF].every(Number.isFinite) || legs.some(L => ![...L.O, L.open, L.ph].every(Number.isFinite))) bad++;
     }
     yawSum.sort((a, b) => a - b);
     const log = turnLog.slice(t0);
-    const opens = log.filter(e => e.why === 'opened').map(e => e.t), reqs = log.filter(e => e.why !== 'opened').map(e => e.t);
-    const gaps = []; for (const ot of opens){ const nx = reqs.find(r => r > ot); if (nx) gaps.push(+(nx - ot).toFixed(1)); }
+    const enters = log.filter(e => e.why === 'enter'), angs = log.filter(e => e.why === 'opened').map(e => e.angle);
+    const gaps = []; for (let k = 1; k < enters.length; k++) gaps.push(+(enters[k].t - enters[k - 1].t).toFixed(1));
+    const sg = gaps.slice().sort((a, b) => a - b), ph = log.filter(e => e.why === 'punch').map(e => +e.ph.toFixed(2));
+    const turnStats = {gapMin:sg[0], gapP10:sg[Math.floor(sg.length*.1)], gapMed:sg[sg.length >> 1], gapMax:sg[sg.length - 1],
+      angMin:Math.round(Math.min(...angs)), angMax:Math.round(Math.max(...angs)), under30:angs.filter(a => a < 30).length, over100:angs.filter(a => a > 100).length, n:angs.length,
+      wallRmin:+Math.min(...enters.map(e => e.wallR)).toFixed(2), lead:+lead.toFixed(2), punchPhases:ph.slice(0, 12)};
     return {turns, branch, minClear:+minClear.toFixed(3), minWithWiden:+minWithWiden.toFixed(3), worst, maxLegs, maxYaw:Math.round(maxYaw), p99Yaw:Math.round(yawSum[Math.floor(yawSum.length*.99)]),
-      bad, maxLag:Math.round(maxLag), p99Lag:Math.round(lags.sort((a, b) => a - b)[Math.floor(lags.length*.99)]), freeAheadMin:+Math.min(...frees).toFixed(2), freeAheadP1:+frees.sort((a, b) => a - b)[Math.floor(frees.length*.01)].toFixed(2), gaps:gaps.slice(0, 12), legsNow:legs.length, origin:origin.map(v => +v.toFixed(1)), cam:camPos.map(v => +v.toFixed(1)), curLz:+route.cur.local(camPos)[2].toFixed(1)};
+      bad, harshFrames:harsh, turnStats, maxLag:Math.round(maxLag), p99Lag:Math.round(lags.sort((a, b) => a - b)[Math.floor(lags.length*.99)]), freeAheadMin:+Math.min(...frees).toFixed(2), freeAheadP1:+frees.sort((a, b) => a - b)[Math.floor(frees.length*.01)].toFixed(2),  legsNow:legs.length, origin:origin.map(v => +v.toFixed(1)), cam:camPos.map(v => +v.toFixed(1)), curLz:+route.cur.local(camPos)[2].toFixed(1)};
   },
   shot(o = {}){ if (o.palette) state.palette = o.palette; if (o.look) state.look = o.look; for (let k = 0; k < 4; k++) render(); return canvas.toDataURL('image/png'); },
   status(){ return {routeKind, plan:!!route.plan, entered:!!(route.plan && route.plan.entered), pending:route.pending, turns, branch, legs:legs.map(L => +L.open.toFixed(2)), cam:camPos.map(v => +v.toFixed(2)), widen:+widen.toFixed(2), bpm:audio.bpm}; },
