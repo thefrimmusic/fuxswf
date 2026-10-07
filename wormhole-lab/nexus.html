@@ -1,0 +1,1271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nexus Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Michroma&display=swap">
+<style>
+/* Layout: full-bleed WebGL stage. HUD floats on top: route status top-left, meters + route map top-right, dock and pull-up sheet along the bottom. */
+:root{
+  --void:#03040a;
+  --ink:#e9edf6;
+  --dim:#8f98ad;
+  --glass:rgba(8,10,18,.7);
+  --line:rgba(160,190,235,.2);
+  --gold:#ffc46b;
+  --a:#1abfff;
+  --b:#ff3aa6;
+  --f-display:"Michroma","Eurostile","Microgramma","Arial Black",sans-serif;
+  --f-ui:"Chakra Petch",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;background:var(--void);color:var(--ink);overflow:hidden}
+body{margin:0;font:14px/1.45 var(--f-ui);-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;background:var(--void)}
+#stage:active{cursor:grabbing}
+.scrim{position:fixed;left:0;right:0;top:0;height:190px;pointer-events:none;background:linear-gradient(rgba(0,0,0,.52),rgba(0,0,0,0));transition:opacity .6s}
+#hud{position:fixed;inset:0;z-index:2;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 12px)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.ident{max-width:min(560px,64vw);transition:opacity 1s;min-width:0}
+.brand{font:600 11px/1.3 var(--f-ui);letter-spacing:.26em;color:var(--dim);text-transform:uppercase}
+.brand b{color:var(--gold);font-weight:600}
+h1{font:400 clamp(20px,4.4vw,40px)/1.08 var(--f-display);letter-spacing:.03em;margin:.32em 0 .22em;text-shadow:0 2px 22px rgba(0,0,0,.7);transition:color .5s}
+h1.turning{color:var(--route-color,var(--a))}
+#routeDesc{margin:0;opacity:.8;max-width:44ch;text-shadow:0 1px 10px rgba(0,0,0,.8)}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;transition:opacity .5s}
+.meters{display:flex;align-items:center;gap:10px}
+.bpm{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums}
+.bpm b{font:400 20px/1 var(--f-display)}
+.bpm span{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.bars{display:flex;gap:3px;height:22px;align-items:flex-end}
+.bars i{display:block;width:5px;height:100%;background:var(--a);transform-origin:bottom;transform:scaleY(.1);border-radius:1px;opacity:.85}
+.bars i:first-child{background:var(--gold)}
+.mapwrap{position:relative;width:clamp(104px,22vw,150px);aspect-ratio:1;max-width:100%;border:1px solid var(--line);border-radius:50%;
+  background:radial-gradient(rgba(10,14,26,.72),rgba(4,5,10,.82));overflow:hidden;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#map{width:100%;height:100%;display:block}
+.stats{font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;font-variant-numeric:tabular-nums;text-align:right}
+.stats b{color:var(--ink);font-weight:600}
+.src{font-size:10.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;max-width:38vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bottom{display:flex;flex-direction:column;gap:8px;width:100%;max-width:760px;margin:0 auto;pointer-events:none}
+.sheet,.dock{pointer-events:auto}
+.sheet{background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:14px;max-height:min(52vh,440px);overflow:auto;
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);overscroll-behavior:contain;touch-action:pan-y}
+.dock{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;transition:opacity .5s}
+button,.btn{font:600 11px/1 var(--f-ui);letter-spacing:.13em;text-transform:uppercase;color:var(--ink);background:var(--glass);
+  border:1px solid var(--line);border-radius:10px;padding:13px 6px;cursor:pointer;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;text-align:center;min-width:0;text-decoration:none}
+button:focus-visible,.btn:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+button[aria-pressed="true"],.dock button.open{border-color:var(--a);color:var(--a)}
+.dock .go{background:linear-gradient(180deg,#ffdca0,var(--gold));color:#1a1000;border-color:transparent}
+.dock .go:active{transform:scale(.97)}
+.dock .go.armed{background:linear-gradient(180deg,#bff0ff,var(--a));}
+.panel{display:flex;flex-direction:column;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:11px 12px}
+.swatch{display:inline-flex;gap:3px}
+.swatch i{width:9px;height:9px;border-radius:50%;display:block}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.row > *{flex:1 1 140px}
+.hint{margin:0;color:var(--dim);font-size:12.5px;max-width:62ch}
+.field{display:grid;grid-template-columns:130px minmax(0,1fr);align-items:center;gap:10px}
+.field label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.field output{color:var(--ink);font-variant-numeric:tabular-nums;margin-left:4px}
+input[type=range]{width:100%;accent-color:var(--gold)}
+.seg{display:grid;grid-template-columns:130px minmax(0,1fr);align-items:center;gap:10px}
+.seg > span{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.seg > div{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{padding:10px 11px;flex:1 1 auto}
+.toggles{display:flex;flex-direction:column;gap:8px}
+.toggles label{display:flex;gap:10px;align-items:center;font-size:13px}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold)}
+.keys{margin:0;color:var(--dim);font-size:12px;letter-spacing:.04em}
+.keys kbd{font:600 11px var(--f-ui);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--ink)}
+.link{color:var(--a)}
+#hud.idle .dock,#hud.idle .side{opacity:0;pointer-events:none}
+#hud.idle .ident{opacity:.0}
+#hud.off .dock,#hud.off .side,#hud.off .ident,#hud.off .sheet{opacity:0;pointer-events:none}
+#hud.off ~ .scrim,#hud.idle ~ .scrim{opacity:0}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 16px);transform:translate(-50%,-140%);opacity:0;max-width:min(520px,calc(100vw - 32px));
+  background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;transition:transform .35s,opacity .35s;
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);pointer-events:none;z-index:5}
+#toast.show{transform:translate(-50%,0);opacity:1}
+#drop{position:fixed;inset:12px;border:2px dashed var(--gold);border-radius:18px;display:flex;align-items:center;justify-content:center;
+  font:400 clamp(18px,4vw,34px) var(--f-display);color:var(--gold);background:rgba(4,5,10,.55);pointer-events:none;z-index:6}
+#vhs{position:fixed;left:calc(16px + 2vw);bottom:calc(env(safe-area-inset-bottom,0px) + 86px);font:600 clamp(16px,3.4vw,30px)/1.3 "Courier New",ui-monospace,monospace;
+  color:#f4f4f4;text-shadow:2px 0 #ff2a6d,-2px 0 #2de2ff;letter-spacing:.06em;pointer-events:none;display:flex;flex-direction:column}
+#card{position:fixed;left:0;right:0;top:42%;transform:translateY(-50%);text-align:center;pointer-events:none;z-index:1;
+  font:400 clamp(30px,9vw,104px)/1 var(--f-display);letter-spacing:.08em;color:var(--ink);opacity:0;transition:opacity .25s;
+  text-shadow:0 0 28px var(--a),0 0 60px rgba(0,0,0,.6)}
+#card small{display:block;font:600 clamp(11px,1.6vw,15px)/1.4 var(--f-ui);letter-spacing:.34em;color:var(--gold);margin-bottom:.6em}
+#card.show{opacity:1}
+#nogl{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding-inline:24px;text-align:center;color:var(--ink);font-size:16px}
+@media (max-width:520px){
+  .dock button{font-size:10px;letter-spacing:.07em;padding:13px 2px}
+  .field,.seg{grid-template-columns:1fr;gap:6px}
+  #routeDesc{font-size:13px}
+  .meters .bpm b{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){ #toast,.ident,.dock,h1,#card{transition:none} }
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="Nexus Runner visual. Drag to look around, tap to show or hide controls."></canvas>
+<div id="hud">
+  <header class="top">
+    <div class="ident" id="ident">
+      <div class="brand"><b>Nexus Runner</b> · <span id="paletteName">Nexus</span> · <span id="lookName">Clean</span></div>
+      <h1 id="route">Branch 01</h1>
+      <p id="routeDesc">Side arteries open off the walls on every side.</p>
+    </div>
+    <div class="side">
+      <div class="meters">
+        <div class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="bpm"><b id="bpm">122</b><span>BPM</span></div>
+      </div>
+      <div class="mapwrap" title="Route map: your trail, heading up, with the next turn dashed"><canvas id="map" width="300" height="300" aria-label="Route map"></canvas></div>
+      <div class="stats"><b id="statTurns">0</b> <span id="lblTurns">turns</span> · <b id="statDist">0</b> traveled</div>
+      <div class="src" id="src">Ghost beat</div>
+    </div>
+  </header>
+  <div class="bottom">
+    <section id="sheet" class="sheet" hidden>
+      <div class="panel" data-panel="palette"><div class="chips" id="paletteChips"></div>
+        <p class="hint">Each palette colors the main tunnel and the two labyrinths it cuts through. The route map and status use the same colors.</p></div>
+      <div class="panel" data-panel="look" hidden><div class="chips" id="lookChips"></div>
+        <p class="hint">Looks are applied after the render, so they work with any palette. GIF dither matches the screenshot that started all this.</p></div>
+      <div class="panel" data-panel="audio" hidden>
+        <div class="row">
+          <label class="btn" for="file">Load a track</label>
+          <button id="micBtn" type="button">Use mic or line-in</button>
+          <button id="playBtn" type="button" hidden>Pause</button>
+        </div>
+        <input type="file" id="file" accept="audio/*" hidden>
+        <p class="hint">MP3, WAV, AIFF or FLAC, or drop a file anywhere. Each kick sends a ring of light out through the labyrinth from where you are. The sub widens the side arteries, and the drop can throw you down one. The mic only works when this file is opened from a local server, not on the hosted page.</p>
+        <div class="field"><label for="sens">Sensitivity <output id="sensOut">1.0×</output></label><input type="range" id="sens" min="0.4" max="2.5" step="0.05" value="1"></div>
+        <div class="toggles">
+          <label><input type="checkbox" id="ghost" checked> Ghost beat at 122 BPM when nothing is playing</label>
+          <label><input type="checkbox" id="dropTurn" checked> Turn down a side artery when the drop hits</label>
+        </div>
+      </div>
+      <div class="panel" data-panel="tune" hidden>
+        <div class="seg"><span>Turns</span><div id="timing"><button data-v="rare">Rare</button><button data-v="random">Random</button><button data-v="often">Often</button><button data-v="beat">On the beat</button></div></div>
+        <p class="hint" id="timingHint">Random: a turn every 3 to 20 seconds, never on a pattern.</p>
+        <div class="seg"><span>Artery run</span><div id="artery"><button data-v="short">Short</button><button data-v="medium">Medium</button><button data-v="long">Long</button></div></div>
+        <div class="seg"><span>Branch cards</span><div id="cards"><button data-v="on">On</button><button data-v="off">Off</button></div></div>
+        <div class="seg"><span>Side arteries</span><div id="width"><button data-v="0.76">Narrow</button><button data-v="0.62">Normal</button><button data-v="0.48">Wide</button></div></div>
+        <div class="field"><label for="speed">Speed <output id="speedOut">1.0×</output></label><input type="range" id="speed" min="0.25" max="3" step="0.05" value="1"></div>
+        <div class="field"><label for="trail">Trails <output id="trailOut">1.0×</output></label><input type="range" id="trail" min="0" max="2.5" step="0.05" value="1"></div>
+        <div class="seg"><span>Quality</span><div id="quality"><button data-v="auto">Auto</button><button data-v="low">Low</button><button data-v="med">Medium</button><button data-v="high">High</button></div></div>
+        <div class="row"><button id="fsBtn" type="button">Fullscreen</button><button id="hideBtn" type="button">Hide controls</button></div>
+        <p class="keys"><kbd>Space</kbd> turn · <kbd>A</kbd> auto turns · <kbd>P</kbd> palette · <kbd>L</kbd> look · <kbd>↑</kbd><kbd>↓</kbd> speed · <kbd>H</kbd> hide · <kbd>F</kbd> fullscreen · drag to look around · tap to hide</p>
+        <p class="hint">The rest of the tunnels are in <a class="link" href="https://claude.ai/artifact/26kM7ZYT8LoWKAzmiqNm27" target="_blank" rel="noopener">Wormhole Lab</a>.</p>
+        <p class="hint" id="perf">Rendering…</p>
+      </div>
+    </section>
+    <nav class="dock" aria-label="Controls">
+      <button type="button" data-tab="palette">Palette</button>
+      <button type="button" data-tab="look">Look</button>
+      <button type="button" data-tab="audio">Audio</button>
+      <button type="button" data-tab="tune">Tune</button>
+      <button type="button" id="goBtn" class="go">Turn</button>
+      <button type="button" id="autoBtn" aria-pressed="true">Auto</button>
+    </nav>
+  </div>
+</div>
+<div class="scrim" aria-hidden="true"></div>
+<div id="vhs" hidden><span>PLAY ▶</span><span id="vhsDate"></span></div>
+<div id="card" aria-hidden="true"><small>NEW BRANCH</small><span id="cardText">BRANCH 02</span></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="drop" hidden>Drop to play</div>
+<div id="nogl" hidden>This visualizer needs WebGL2. Try a current version of Chrome, Safari, Edge or Firefox.</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const canvas = $('#stage');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false, stencil:false, premultipliedAlpha:false, powerPreference:'high-performance'});
+if (!gl) { $('#nogl').hidden = false; $('#hud').hidden = true; return; }
+const TEST = /[?&]test/.test(location.search);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const floatOK = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+const parallel = gl.getExtension('KHR_parallel_shader_compile');
+const errors = [];
+
+
+/* ================================================================
+   Geometry shared by the shader and the route planner.
+   Tunnels are "legs": tubes with a gentle wiggle in their own frame.
+   Side arteries are both labyrinths of the gyroid
+   g = sin x cos y + sin y cos z + sin z cos x, sampled at p*1.3,
+   kept wherever |g| > threshold. They perforate every leg.
+   A turn dives into one of those arteries and a new leg grows out of it.
+   ================================================================ */
+const TUBE_R = 1.35, GSCALE = 1.3, Q = Math.PI/4, MAXL = 4, PERIOD = 240;
+const W48 = 2*Math.PI/48, W60 = 2*Math.PI/60, W30 = 2*Math.PI/30;   // all divide PERIOD, so a leg can be re-origined by 240
+
+const VS = `#version 300 es
+out vec2 vUv;
+void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); vUv = p; gl_Position = vec4(p*2. - 1., 0., 1.); }`;
+
+const SCENE = `#version 300 es
+precision highp float;
+precision highp int;
+#define MAXL ${MAXL}
+uniform vec2 uRes;
+uniform float uTime, uKick, uBass, uHat, uQ, uFov, uTubeR, uChanC, uWiden, uWave, uJunc, uTurnA;
+uniform vec3 uCamPos, uColT, uColA, uColB, uTurnPt;
+uniform mat3 uCamRot;
+uniform vec2 uLook;
+uniform int uLegN;
+uniform vec4 uLO[MAXL];   // origin (rebased), length
+uniform vec4 uLR[MAXL];   // right axis, wiggle amplitude
+uniform vec4 uLF[MAXL];   // forward axis, phase
+uniform vec4 uLX[MAXL];   // open 0..1, ramp flag, wig(phase).xy
+out vec4 fragColor;
+#define TAU 6.28318531
+mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+float smax(float a, float b, float k){ float h = max(k - abs(a - b), 0.)/k; return max(a, b) + h*h*k*.25; }
+float gyr(vec3 p){ return dot(sin(p), cos(p.yzx)); }
+vec2 wig(float z){ return vec2(2.6*sin(.13089969*z), 2.1*cos(.10471976*z)); }
+float legV(int i, vec3 p){
+  vec3 d = p - uLO[i].xyz;
+  vec3 f = uLF[i].xyz, r = uLR[i].xyz, u = cross(f, r);
+  vec3 l = vec3(dot(d, r), dot(d, u), dot(d, f));
+  float z = clamp(l.z, 0., uLO[i].w);
+  vec4 X = uLX[i];
+  float ramp = X.y > .5 ? smoothstep(0., 24., z) : 1.;
+  vec2 w = uLR[i].w*(wig(z + uLF[i].w) - X.zw)*ramp;
+  float R = (uTubeR + .3*sin(z*.20943951 + uLF[i].w))*X.x;
+  return R - length(vec3(l.xy - w, l.z - z));
+}
+float mapN(vec3 p, out float g, out float tb, out float ch){
+  tb = legV(0, p);
+  for(int i = 1; i < MAXL; i++){ if(i >= uLegN) break; tb = smax(tb, legV(i, p), .5); }
+  g = gyr(p*1.3);
+  vec3 dc = p - uCamPos;
+  float wid = uWiden*.5*exp(-dot(dc, dc)*.09);
+  ch = (abs(g) - uChanC + .09*uBass + wid)/2.4;
+  return smax(tb, ch, .25);
+}
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec2 uv = (fc - .5*uRes)/min(uRes.x, uRes.y);
+  vec3 rd = normalize(vec3(uv*uFov, 1.));
+  rd.yz *= rot(uLook.y);
+  rd.xz *= rot(-uLook.x);
+  rd = normalize(uCamRot*rd);
+  vec3 ro = uCamPos;
+  float t = .03, g, tb, ch, d = 1.;
+  bool hit = false;
+  vec3 acc = vec3(0.);
+  int N = int(mix(56., 124., uQ));
+  for(int i = 0; i < 124; i++){
+    if(i >= N) break;
+    vec3 p = ro + rd*t;
+    d = mapN(p, g, tb, ch);
+    if(ch > 0. && tb < 0.){
+      float flow = .55 + .45*sin(dot(p, vec3(1.3, 1.3, 2.6)) - uTime*3.);
+      acc += (g > 0. ? uColA : uColB)*.011*(.4 + 1.6*uKick)*flow*smoothstep(0., .2, ch)*exp(-t*.07);
+    }
+    vec3 dB = p - uTurnPt;
+    acc += mix(uColA, uColB, step(gyr(uTurnPt*1.3), 0.))*uTurnA*.045*(.55 + .45*sin(uTime*7.))*exp(-dot(dB, dB)*.9)*min(d*6., 1.);
+    if(d < .001*t + .0006){ hit = true; break; }
+    t += d*.8;
+    if(t > 32.) break;
+  }
+  vec3 bg = vec3(.006, .008, .02);
+  vec3 col = bg;
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec3 n = vec3(0.);
+    for(int i = min(uLegN, 0); i < 4; i++){
+      vec3 e = .5773*(2.*vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.);
+      float a1, a2, a3;
+      n += e*mapN(p + .005*e, a1, a2, a3);
+    }
+    n = normalize(n);
+    mapN(p, g, tb, ch);
+    float dif = max(dot(n, -rd), 0.);
+    float fres = pow(1. - dif, 3.);
+    vec3 film = .5 + .5*cos(TAU*(dot(n, rd)*1.3 + g*.3 + uTime*.04 + vec3(0., .33, .67)));
+    float lw = 1. + t*.09;
+    float x1 = fract(g*2.2 - uTime*.35);
+    float lnT = smoothstep(.07*lw, 0., min(x1, 1. - x1))*min(1., 1.6/lw);
+    float g2 = gyr(p*2.6 + 1.3);
+    float x2 = fract(g2*1.6 + uTime*.25);
+    float lnC = smoothstep(.06*lw, 0., min(x2, 1. - x2))*min(1., 1.6/lw);
+    float wave = exp(-abs(t - uWave)*1.4)*uKick;
+    vec3 dT = p - uTurnPt;
+    float tg = uTurnA*exp(-dot(dT, dT)*.22);
+    float boost = 1. + uJunc*1.2 + wave*3.5 + tg*2.;
+    if(tb > ch){
+      col = vec3(.012, .014, .024) + film*fres*.22 + vec3(.05, .06, .09)*pow(dif, 8.);
+      col += uColT*lnT*(.7 + 1.6*uKick + .8*uBass)*boost;
+    } else {
+      vec3 cc = g > 0. ? uColA : uColB;
+      col = cc*(.015 + mix(.18, .08, uWiden)*dif) + film*fres*.12 + cc*lnC*(.9 + 1.4*uKick)*boost;
+    }
+    col += mix(uColT, vec3(1.), .5)*exp(-abs(tb - ch)*22.)*(.4 + 1.6*uKick + 1.6*tg);
+    col = mix(col, bg, 1. - exp(-t*(.07 + .07*uWiden)));
+  }
+  col += acc;
+  if(any(isnan(col)) || any(isinf(col))) col = vec3(0.);
+  fragColor = vec4(clamp(col, 0., 60.), clamp((hit ? t : 40.)/40., 0., 1.));
+}`;
+const FX = `#version 300 es
+precision highp float;
+uniform sampler2D uScene, uPrev;
+uniform vec2 uRes;
+uniform float uShock, uTrail, uBlur, uCA, uSpin;
+in vec2 vUv;
+out vec4 o;
+void main(){
+  vec2 uv = vUv;
+  float sc = min(uRes.x, uRes.y);
+  vec2 p = (gl_FragCoord.xy - .5*uRes)/sc;
+  float asp = uRes.x/uRes.y;
+  if(uShock > 0. && uShock < 1.){
+    float rr = length(p), fr = uShock*1.3;
+    float w = exp(-pow((rr - fr)*7., 2.))*(1. - uShock);
+    uv -= p/(rr + 1e-4)*w*.05*sc/uRes;
+  }
+  vec2 dir = uv - .5;
+  vec3 c = vec3(0.);
+  float ca = uCA*.01 + uShock*(1. - uShock)*.03;
+  for(int i = 0; i < 6; i++){
+    float k = float(i)/5.;
+    vec2 su = .5 + dir*(1. - uBlur*k*.03);
+    vec2 o2 = dir*ca;
+    c.r += texture(uScene, su + o2).r;
+    c.g += texture(uScene, su).g;
+    c.b += texture(uScene, su - o2).b;
+  }
+  c /= 6.;
+  vec2 dd = (uv - .5)*vec2(asp, 1.)*(1. - .015*uBlur);
+  float cs = cos(uSpin), sn = sin(uSpin);
+  dd = vec2(cs*dd.x - sn*dd.y, sn*dd.x + cs*dd.y);
+  vec3 prev = texture(uPrev, .5 + dd/vec2(asp, 1.)).rgb;
+  c = max(c, prev*uTrail);
+  o = vec4(c, 1.);
+}`;
+
+const BRIGHT = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uTh;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec3 c = (texture(uSrc, vUv + uTexel*vec2(-.5, -.5)).rgb + texture(uSrc, vUv + uTexel*vec2(.5, -.5)).rgb
+          + texture(uSrc, vUv + uTexel*vec2(-.5, .5)).rgb + texture(uSrc, vUv + uTexel*vec2(.5, .5)).rgb)*.25;
+  float l = max(c.r, max(c.g, c.b));
+  c *= max(l - uTh, 0.)/max(l, 1e-4);
+  o = vec4(c, 1.);
+}`;
+const DOWN = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec2 h = uTexel;
+  vec3 s = texture(uSrc, vUv).rgb*4. + texture(uSrc, vUv - h).rgb + texture(uSrc, vUv + h).rgb
+         + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb + texture(uSrc, vUv - vec2(h.x, -h.y)).rgb;
+  o = vec4(s/8., 1.);
+}`;
+const UP = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec2 h = uTexel;
+  vec3 s = texture(uSrc, vUv + vec2(-h.x*2., 0.)).rgb + texture(uSrc, vUv + vec2(-h.x, h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(0., h.y*2.)).rgb + texture(uSrc, vUv + vec2(h.x, h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(h.x*2., 0.)).rgb + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(0., -h.y*2.)).rgb + texture(uSrc, vUv + vec2(-h.x, -h.y)).rgb*2.;
+  o = vec4(s/12., 1.);
+}`;
+const FINAL = `#version 300 es
+precision highp float;
+uniform sampler2D uFx, uBloom, uBlue;
+uniform vec2 uRes;
+uniform float uTime, uKick, uFlash, uBloomAmt, uExposure;
+uniform int uLook;
+in vec2 vUv; out vec4 o;
+float hh(float p){ p = fract(p*.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+vec3 aces(vec3 x){ return clamp((x*(2.51*x + .03))/(x*(2.43*x + .59) + .14), 0., 1.); }
+vec3 hueRot(vec3 c, float a){ const vec3 k = vec3(.57735); float ca = cos(a); return c*ca + cross(k, c)*sin(a) + k*dot(k, c)*(1. - ca); }
+vec3 ramp(float x){
+  x = clamp(x, 0., 1.)*4.;
+  vec3 a = vec3(0.), b = vec3(.22, .02, .45), c = vec3(.85, .1, .45), d = vec3(1., .55, .05), e = vec3(1., 1., .85);
+  return x < 1. ? mix(a, b, x) : x < 2. ? mix(b, c, x - 1.) : x < 3. ? mix(c, d, x - 2.) : mix(d, e, x - 3.);
+}
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  float px = 1.;
+  if(uLook == 2 || uLook == 3) px = max(2., floor(min(uRes.x, uRes.y)/380.));
+  vec2 uv = ((floor(fc/px) + .5)*px)/uRes;
+  if(uLook == 4){
+    float ln = floor(fc.y/2.);
+    uv.x += sin(ln*.07 + uTime*3.)*.0012 + (hh(ln + floor(uTime*30.)) - .5)*.004*step(.93, hh(floor(uTime*5.)));
+  }
+  vec3 c = texture(uFx, uv).rgb;
+  vec3 b = texture(uBloom, uv).rgb;
+  if(uLook == 1) b *= vec3(1.2, .85, .68);
+  c += b*uBloomAmt;
+  if(uLook == 4){
+    c.r = mix(c.r, texture(uFx, uv + vec2(.005, 0.)).r, .65);
+    c.b = mix(c.b, texture(uFx, uv - vec2(.005, 0.)).b, .65);
+  }
+  c *= uExposure;
+  c += uFlash*uFlash*vec3(2.8, 2.9, 3.);
+  vec3 m = aces(c);
+  float L = dot(m, vec3(.299, .587, .114));
+  float dn = texture(uBlue, floor(fc/px)/64.).r;
+  vec2 q = uv - .5;
+  float vig = 1. - dot(q, q)*.9;
+  if(uLook == 0){
+    m *= vig;
+  } else if(uLook == 1){
+    m = mix(vec3(L), m, 1.12);
+    m = m*vec3(1.04, 1., .93) + vec3(0., .014, .03)*(1. - L);
+    m = smoothstep(-.02, 1.02, m);
+    float gr = texture(uBlue, (fc + vec2(floor(uTime*24.)*17., floor(uTime*24.)*29.))/64.).r - .5;
+    m += gr*.075*(1. - L*.6);
+    m *= vig;
+  } else if(uLook == 2){
+    float l = smoothstep(.015, .93, pow(L, .92))*mix(1., vig, .6);
+    l = floor(l*7. + dn)/7.;
+    m = vec3(l)*vec3(.97, .98, 1.);
+  } else if(uLook == 3){
+    float l = smoothstep(.03, .88, L)*mix(1., vig, .5);
+    m = mix(vec3(.03, .03, .05), vec3(.93, .94, .9), step(dn, l));
+  } else if(uLook == 4){
+    m = mix(vec3(L), m, .8)*vec3(1.02, .97, 1.08) + .03;
+    m *= .82 + .18*step(.5, fract(fc.y/3.));
+    m += (hh(fc.x*.37 + fc.y*1.31 + floor(uTime*60.)) - .5)*.07;
+    m += step(abs(uv.y - 1. + fract(uTime*.07)*1.2), .015)*.12;
+    m *= vig;
+  } else if(uLook == 5){
+    m = ramp(pow(L, .85)*1.05)*vig;
+  } else if(uLook == 6){
+    vec3 s = hueRot(m, uTime*.7 + uKick*1.6);
+    s = mix(vec3(dot(s, vec3(.299, .587, .114))), s, 1.8);
+    s = floor(clamp(s, 0., 1.)*5. + dn)/5.;
+    m = s*vig;
+  }
+  m += (dn - .5)/255.;
+  o = vec4(m, 1.);
+}`;
+
+/* ================================================================
+   GL plumbing
+   ================================================================ */
+gl.bindVertexArray(gl.createVertexArray());
+let vsObj = null;
+function makeProgram(fsrc, name){
+  if (!vsObj){ vsObj = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vsObj, VS); gl.compileShader(vsObj); }
+  const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsrc); gl.compileShader(fs);
+  const p = gl.createProgram(); gl.attachShader(p, vsObj); gl.attachShader(p, fs); gl.linkProgram(p);
+  return {p, fs, name, src:fsrc, loc:{}, ready:false, failed:false};
+}
+function ready(P){
+  if (P.ready) return true;
+  if (P.failed) return false;
+  if (parallel && !gl.getProgramParameter(P.p, parallel.COMPLETION_STATUS_KHR)) return false;
+  if (!gl.getProgramParameter(P.p, gl.LINK_STATUS)){
+    P.failed = true;
+    const log = gl.getShaderInfoLog(P.fs) || gl.getProgramInfoLog(P.p);
+    errors.push(P.name + ': ' + log);
+    console.error('Shader ' + P.name + ' failed:\n' + log);
+    return false;
+  }
+  P.ready = true; return true;
+}
+const U = (P, n) => { let l = P.loc[n]; if (l === undefined) l = P.loc[n] = gl.getUniformLocation(P.p, n); return l; };
+const f1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1f(l, a); };
+const f2 = (P, n, a, b) => { const l = U(P, n); if (l) gl.uniform2f(l, a, b); };
+const f3 = (P, n, v) => { const l = U(P, n); if (l) gl.uniform3f(l, v[0], v[1], v[2]); };
+const i1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1i(l, a); };
+const m3 = (P, n, m) => { const l = U(P, n); if (l) gl.uniformMatrix3fv(l, false, m); };
+const sceneP = makeProgram(SCENE, 'scene'), fxP = makeProgram(FX, 'fx'), brightP = makeProgram(BRIGHT, 'bright'), downP = makeProgram(DOWN, 'down'), upP = makeProgram(UP, 'up'), finalP = makeProgram(FINAL, 'final');
+
+function makeBlue(){
+  const N = 64, A = N*N;
+  let s = 99; const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0)/4294967296;
+  const a = new Float32Array(A), tmp = new Float32Array(A), blur = new Float32Array(A);
+  for (let i = 0; i < A; i++) a[i] = rnd();
+  const k = [.0702, .1311, .1907, .2161, .1907, .1311, .0702];
+  const idx = Array.from({length:A}, (_, i) => i);
+  for (let it = 0; it < 8; it++){
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){ let v = 0; for (let j = -3; j <= 3; j++) v += k[j + 3]*a[y*N + ((x + j + N) % N)]; tmp[y*N + x] = v; }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){ let v = 0; for (let j = -3; j <= 3; j++) v += k[j + 3]*tmp[((y + j + N) % N)*N + x]; blur[y*N + x] = v; }
+    for (let i = 0; i < A; i++) a[i] -= blur[i];
+    idx.sort((p, q) => a[p] - a[q]);
+    for (let r = 0; r < A; r++) a[idx[r]] = (r + .5)/A;
+  }
+  const d = new Uint8Array(A); for (let i = 0; i < A; i++) d[i] = Math.floor(a[i]*256);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, N, N, 0, gl.RED, gl.UNSIGNED_BYTE, d);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  return tex;
+}
+const blueTex = makeBlue();
+function makeRT(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (floatOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  return {tex, fb, w, h};
+}
+const freeRT = r => { gl.deleteTexture(r.tex); gl.deleteFramebuffer(r.fb); };
+let RT = null, iw = 0, ih = 0;
+function ensureTargets(w, h){
+  if (RT && RT.w === w && RT.h === h) return;
+  if (RT){ freeRT(RT.scene); RT.fx.forEach(freeRT); RT.bloom.forEach(freeRT); }
+  const bloom = []; let bw = w, bh = h;
+  for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); bloom.push(makeRT(bw, bh)); }
+  RT = {w, h, scene:makeRT(w, h), fx:[makeRT(w, h), makeRT(w, h)], bloom, ping:0};
+}
+const tex2 = (unit, t) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); };
+const target = r => { gl.bindFramebuffer(gl.FRAMEBUFFER, r ? r.fb : null); gl.viewport(0, 0, r ? r.w : canvas.width, r ? r.h : canvas.height); };
+
+/* ================================================================
+   Palettes and looks
+   ================================================================ */
+const PALETTES = [
+  {id:'nexus', name:'Nexus', T:[1, .72, .32], A:[.1, .75, 1], B:[1, .2, .65], an:'cyan', bn:'magenta'},
+  {id:'ember', name:'Ember', T:[1, .9, .72], A:[1, .45, .1], B:[.95, .12, .2], an:'amber', bn:'crimson'},
+  {id:'bio', name:'Biolume', T:[.35, 1, .85], A:[.45, 1, .3], B:[.6, .3, 1], an:'green', bn:'violet'},
+  {id:'uv', name:'Ultraviolet', T:[.75, .88, 1], A:[.45, .38, 1], B:[1, .32, .85], an:'indigo', bn:'pink'},
+  {id:'ghost', name:'Ghost', T:[.95, .95, .95], A:[.72, .78, .86], B:[.42, .46, .52], an:'pale', bn:'shadow'},
+];
+const LOOKS = [
+  {id:'clean', name:'Clean', n:0}, {id:'film', name:"Film '97", n:1}, {id:'gif', name:'GIF dither', n:2},
+  {id:'bit', name:'1-bit', n:3}, {id:'vhs', name:'VHS', n:4}, {id:'thermal', name:'Thermal', n:5}, {id:'acid', name:'Acid', n:6},
+];
+
+/* ================================================================
+   Audio (file, drop, mic or ghost beat)
+   ================================================================ */
+const audio = {
+  ctx:null, an:null, buf:null, el:null, node:null, stream:null, kind:'none', fileName:'',
+  env:{kick:0, bass:0, mid:0, high:0, hat:0},
+  bpm:0, kickTimes:[], flux:[], hiFlux:[], prevLow:0, prevHi:0, pk:[1e-4, 1e-4, 1e-4], lastKick:-9, lastHat:-9,
+  ghostPhase:0, shortB:0, longB:0, dropCool:8,
+  ensure(){
+    if (!this.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.an = this.ctx.createAnalyser(); this.an.fftSize = 2048; this.an.smoothingTimeConstant = 0;
+      this.buf = new Float32Array(this.an.frequencyBinCount);
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  stop(){
+    if (this.el){ this.el.pause(); this.el.src = ''; this.el = null; }
+    if (this.node){ try { this.node.disconnect(); } catch(e){} this.node = null; }
+    if (this.stream){ this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    this.kind = 'none'; this.kickTimes = []; this.bpm = 0;
+  },
+  async useFile(file){
+    this.ensure(); this.stop();
+    const el = new Audio(); el.src = URL.createObjectURL(file); el.loop = true; el.preload = 'auto';
+    const node = this.ctx.createMediaElementSource(el);
+    node.connect(this.an); node.connect(this.ctx.destination);
+    this.el = el; this.node = node; this.kind = 'file'; this.fileName = file.name.replace(/\.[^.]+$/, '');
+    await el.play();
+  },
+  async useMic(){
+    this.ensure();
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    this.stop();
+    this.stream = stream; this.node = this.ctx.createMediaStreamSource(stream); this.node.connect(this.an); this.kind = 'mic';
+  },
+  live(){ return this.kind === 'mic' || (this.kind === 'file' && this.el && !this.el.paused); },
+  kick(now, amt){ this.env.kick = Math.max(this.env.kick, amt); lastKickT = now; onBeat(); },
+  update(dt, now){
+    const E = this.env;
+    E.kick *= Math.exp(-dt*6); E.hat *= Math.exp(-dt*11);
+    if (!this.live()){
+      if (state.ghost){
+        const prev = this.ghostPhase;
+        this.ghostPhase += dt*122/60;
+        if (this.ghostPhase >= 1){ this.ghostPhase -= 1; this.kick(now, .85); }
+        if (prev < .5 && this.ghostPhase >= .5) E.hat = .7;
+        E.bass += (.42 + .36*Math.exp(-this.ghostPhase*4) - E.bass)*Math.min(1, dt*20);
+        E.mid = .35 + .15*Math.sin(now*.9); E.high = .25 + .3*E.hat;
+        this.bpm = 122;
+      } else { const k = Math.exp(-dt*3); E.bass *= k; E.mid *= k; E.high *= k; this.bpm = 0; }
+      return;
+    }
+    const buf = this.buf; this.an.getFloatFrequencyData(buf);
+    const hz = this.ctx.sampleRate/this.an.fftSize;
+    const band = (lo, hi) => {
+      const a = Math.max(1, Math.floor(lo/hz)), b = Math.min(buf.length - 1, Math.ceil(hi/hz));
+      let s = 0; for (let i = a; i <= b; i++){ const v = buf[i]; if (v > -150){ const m = Math.pow(10, v/20); s += m*m; } }
+      return Math.sqrt(s/(b - a + 1));
+    };
+    const low = band(35, 130), mid = band(300, 2500), hi = band(5000, 12000), vals = [low, mid, hi];
+    for (let i = 0; i < 3; i++) this.pk[i] = Math.max(vals[i], this.pk[i]*Math.exp(-dt/8), 1e-5);
+    const sens = state.sens;
+    const nb = Math.min(1.2, low/this.pk[0]*sens), nm = Math.min(1.2, mid/this.pk[1]*sens), nh = Math.min(1.2, hi/this.pk[2]*sens);
+    const follow = (cur, tgt, att, rel) => cur + (tgt - cur)*(1 - Math.exp(-dt/(tgt > cur ? att : rel)));
+    E.bass = follow(E.bass, nb*nb, .02, .22); E.mid = follow(E.mid, nm, .04, .3); E.high = follow(E.high, nh, .02, .15);
+    const flux = Math.max(0, low - this.prevLow)/this.pk[0]; this.prevLow = low;
+    const hf = Math.max(0, hi - this.prevHi)/this.pk[2]; this.prevHi = hi;
+    const h = this.flux; h.push(flux); if (h.length > 45) h.shift();
+    const mean = h.reduce((a, b) => a + b, 0)/h.length;
+    const sd = Math.sqrt(h.reduce((a, b) => a + (b - mean)*(b - mean), 0)/h.length);
+    if (flux > mean + 1.4*sd + .02/sens && flux > .05/sens && now - this.lastKick > .22){
+      this.lastKick = now; this.kick(now, 1);
+      this.kickTimes.push(now); if (this.kickTimes.length > 24) this.kickTimes.shift();
+      const iois = [];
+      for (let i = 1; i < this.kickTimes.length; i++){ const d = this.kickTimes[i] - this.kickTimes[i - 1]; if (d > .27 && d < 1.5) iois.push(d); }
+      if (iois.length >= 4){
+        iois.sort((a, b) => a - b);
+        let bpm = 60/iois[iois.length >> 1];
+        while (bpm < 85) bpm *= 2; while (bpm >= 175) bpm /= 2;
+        this.bpm = this.bpm ? this.bpm + (bpm - this.bpm)*.3 : bpm;
+      }
+    }
+    const hh = this.hiFlux; hh.push(hf); if (hh.length > 30) hh.shift();
+    const hm = hh.reduce((a, b) => a + b, 0)/hh.length;
+    if (hf > hm*2.2 + .04 && now - this.lastHat > .09){ this.lastHat = now; E.hat = 1; }
+    this.shortB += (E.bass - this.shortB)*(1 - Math.exp(-dt/.4));
+    this.longB += (E.bass - this.longB)*(1 - Math.exp(-dt/7));
+    this.dropCool -= dt;
+    if (state.dropTurn && this.dropCool <= 0 && this.shortB > .5 && this.longB < .3 && this.shortB > this.longB*2.2){
+      this.dropCool = 20; requestTurn('drop');
+    }
+  },
+};
+
+
+/* ================================================================
+   Route planner: the same distance field in JS, the gyroid junction
+   graph, and a camera path that keeps turning off down side arteries
+   that grow into new tunnels. It never goes back.
+   ================================================================ */
+const v3 = {
+  add:(a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub:(a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  scl:(a, s) => [a[0]*s, a[1]*s, a[2]*s], dot:(a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+  len:a => Math.hypot(a[0], a[1], a[2]), mix:(a, b, t) => [a[0] + (b[0] - a[0])*t, a[1] + (b[1] - a[1])*t, a[2] + (b[2] - a[2])*t],
+  cross:(a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]],
+};
+v3.norm = a => { const l = v3.len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+v3.dist = (a, b) => v3.len(v3.sub(a, b));
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a)/(b - a))); return t*t*(3 - 2*t); };
+const wig = z => [2.6*Math.sin(W48*z), 2.1*Math.cos(W60*z)];
+const gyr = (x, y, z) => Math.sin(x)*Math.cos(y) + Math.sin(y)*Math.cos(z) + Math.sin(z)*Math.cos(x);
+
+let legSeq = 0;
+class Leg {
+  constructor(O, f, up, ph, amp, ramp, open){
+    this.id = ++legSeq; this.O = O; this.f = v3.norm(f);
+    let r = v3.cross(up, this.f);
+    if (v3.len(r) < 1e-3) r = v3.cross(Math.abs(this.f[1]) < .9 ? [0, 1, 0] : [1, 0, 0], this.f);
+    this.r = v3.norm(r); this.u = v3.cross(this.f, this.r);
+    this.ph = ph; this.amp = amp; this.ramp = ramp; this.P0 = wig(ph); this.len = 1e6;
+    this.open = open; this.target = open; this.rate = 1/.75;
+  }
+  w(z){ const a = wig(z + this.ph), k = this.amp*(this.ramp ? smooth(0, 24, z) : 1); return [(a[0] - this.P0[0])*k, (a[1] - this.P0[1])*k]; }
+  point(z){ const w = this.w(z); return [0, 1, 2].map(i => this.O[i] + this.r[i]*w[0] + this.u[i]*w[1] + this.f[i]*z); }
+  local(p){ const d = v3.sub(p, this.O); return [v3.dot(d, this.r), v3.dot(d, this.u), v3.dot(d, this.f)]; }
+  radial(p){ const l = this.local(p), w = this.w(Math.max(0, l[2])); return Math.hypot(l[0] - w[0], l[1] - w[1]); }
+  voidAt(p, open = this.open){
+    const l = this.local(p), z = Math.min(this.len, Math.max(0, l[2])), w = this.w(z);
+    return (TUBE_R + .3*Math.sin(z*W30 + this.ph))*open - Math.hypot(l[0] - w[0], l[1] - w[1], l[2] - z);
+  }
+  tangent(z){ return v3.norm(v3.sub(this.point(z + .05), this.point(z - .05))); }
+  shift(){ this.O = v3.add(this.O, v3.scl(this.f, PERIOD)); this.ramp = false; }   // identical tube ahead, keeps lz small
+}
+let legs = [];
+const chanV = p => (Math.abs(gyr(p[0]*GSCALE, p[1]*GSCALE, p[2]*GSCALE)) - state.chanC)/2.4;
+function tubeVoid(p, planned){ let v = -1e9; for (const L of legs) v = Math.max(v, L.voidAt(p, planned ? Math.max(L.open, L.target) : L.open)); return v; }
+const voidAt = (p, planned) => Math.max(tubeVoid(p, planned), chanV(p));
+function clear(a, b, m){
+  const L = v3.dist(a, b), n = Math.max(2, Math.ceil(L/.07));
+  for (let i = 0; i <= n; i++) if (voidAt(v3.mix(a, b, i/n), true) < m) return false;
+  return true;
+}
+// Junctions of both labyrinths sit at odd multiples of π/4 (gyroid space) where g = ±1.5; each has exactly 3 neighbours.
+const EDGES = [[2,2,0],[2,-2,0],[-2,2,0],[-2,-2,0],[2,0,2],[2,0,-2],[-2,0,2],[-2,0,-2],[0,2,2],[0,2,-2],[0,-2,2],[0,-2,-2]];
+const vSign = n => { const g = gyr(n[0]*Q, n[1]*Q, n[2]*Q); return g > 1.499 ? 1 : g < -1.499 ? -1 : 0; };
+const vWorld = n => [n[0]*Q/GSCALE, n[1]*Q/GSCALE, n[2]*Q/GSCALE];
+const vKey = n => n.join(',');
+const neighbours = (n, s) => EDGES.map(e => [n[0] + e[0], n[1] + e[1], n[2] + e[2]]).filter(m => vSign(m) === s);
+const oddNear = x => { const k = Math.round((x - 1)/2); return [2*k - 1, 2*k + 1, 2*k + 3]; };
+const ARTERY = {short:[0, 0], medium:[1, 1], long:[2, 3]};   // extra junctions inside the artery before it opens up
+
+class Route {
+  constructor(leg, z0){
+    this.pts = []; this.lens = []; this.cur = leg; this.zGen = z0; this.pending = false; this.plan = null; this.startFlag = false;
+    this.i = 1; this.d = 0;
+    for (let k = 0; k < 4; k++) this.pushLeg();
+  }
+  pushLeg(){
+    const pt = {p:this.cur.point(this.zGen), kind:0, leg:this.cur};
+    if (this.startFlag){ pt.legStart = true; this.startFlag = false; }
+    this.pts.push(pt); this.zGen += 1;
+  }
+  // a junction just outside the current tunnel wall, reachable by a straight clear line from the centerline
+  findEntry(leg, z0, z1){
+    const cands = [], wide = innerWidth >= innerHeight;
+    for (let z = Math.ceil(z0*2)/2; z <= z1; z += .5){
+      const c = leg.point(z), base = c.map(v => v*GSCALE/Q);
+      for (const a of oddNear(base[0])) for (const b of oddNear(base[1])) for (const k of oddNear(base[2])){
+        const n = [a, b, k], s = vSign(n);
+        if (!s) continue;
+        const w = vWorld(n), l = leg.local(w), r = leg.radial(w);
+        if (l[2] < z + .4 || l[2] > z + 3 || r < .5 || r > TUBE_R + 1.1) continue;
+        if (!neighbours(n, s).some(m => leg.radial(vWorld(m)) > r + .3)) continue;
+        if (!clear(c, w, .3)) continue;
+        // prefer openings along the screen's long axis: they enter view earlier and read as turns
+        const dir = v3.norm(v3.sub(w, c));
+        const side = Math.abs(v3.dot(dir, wide ? camR : camU));
+        cands.push({z, c, n, s, score:Math.random() + side*.8 + r*.3});
+      }
+      if (cands.length >= 3) break;
+    }
+    cands.sort((u, v) => v.score - u.score);
+    return cands[0] || null;
+  }
+  buildTurn(e){
+    const old = this.cur;
+    while (this.zGen < e.z - .5) this.pushLeg();
+    this.pts.push({p:e.c, kind:0, leg:old, grow:true});
+    const s = e.s, kind = s > 0 ? 1 : 2, fOld = old.tangent(e.z);
+    const [lo, hi] = ARTERY[state.artery] || ARTERY.medium;
+    const extra = lo + Math.floor(Math.random()*(hi - lo + 1));
+    let n = e.n, prev = null;
+    const verts = [n], seen = new Set([vKey(n)]);
+    const pick = (cur, prv, exit) => {
+      let best = null, bs = -1e9;
+      const cw = vWorld(cur), rc = old.radial(cw);
+      for (const m of neighbours(cur, s)){
+        if (prv && vKey(m) === vKey(prv)) continue;
+        const mw = vWorld(m), dir = v3.norm(v3.sub(mw, cw));
+        let sc = (old.radial(mw) - rc)*1.2 + v3.dot(dir, fOld)*.35 + Math.random()*.6;
+        if (seen.has(vKey(m))) sc -= 4;
+        if (exit && v3.dot(dir, fOld) < -.5) sc -= 2;   // never head back the way we came
+        if (sc > bs){ bs = sc; best = m; }
+      }
+      return best;
+    };
+    for (let k = 0; k < extra; k++){ const m = pick(n, prev, false); prev = n; n = m; verts.push(n); seen.add(vKey(n)); }
+    const N = pick(n, prev, true), Vn = vWorld(n), fNew = v3.norm(v3.sub(vWorld(N), Vn));
+    let up = v3.sub(old.u, v3.scl(fNew, v3.dot(old.u, fNew)));
+    if (v3.len(up) < .2) up = v3.sub(old.r, v3.scl(fNew, v3.dot(old.r, fNew)));
+    const leg = new Leg(Vn, fNew, v3.norm(up), Math.random()*PERIOD, .8, true, 0);
+    leg.target = 0;
+    legs.push(leg);
+    verts.forEach((v, k) => this.pts.push({p:vWorld(v), kind, junction:true, enter:k === 0}));
+    this.cur = leg; this.zGen = 1; this.startFlag = true;
+    // for the HUD: where the opening sits on screen and how the route bends on the map
+    const V0 = vWorld(e.n), toV = v3.sub(V0, camPos);
+    const clock = ((Math.round(Math.atan2(v3.dot(toV, camR), v3.dot(toV, camU))/(2*Math.PI)*12) % 12) + 12) % 12 || 12;
+    const d1 = v3.norm(v3.sub(V0, e.c));
+    const ang = d => Math.atan2(v3.dot(d, camR), v3.dot(d, camF));
+    this.plan = {leg, old, V0, kind, clock, bendIn:ang(d1), bendOut:ang(fNew) - ang(d1), entered:false};
+    this.pending = false;
+  }
+  extend(){
+    if (this.pending && !this.plan){
+      const e = this.findEntry(this.cur, this.zGen, this.zGen + 6);
+      if (e){ this.buildTurn(e); return; }
+    }
+    this.pushLeg();
+  }
+  ensure(k){ while (this.pts.length < k + 2) this.extend(); }
+  bez(i, u){
+    const A = this.pts[i - 1].p, C = this.pts[i].p, B = this.pts[i + 1].p;
+    const m0 = v3.mix(A, C, .5), m1 = v3.mix(C, B, .5), a = (1 - u)*(1 - u), b = 2*u*(1 - u), c = u*u;
+    return [m0[0]*a + C[0]*b + m1[0]*c, m0[1]*a + C[1]*b + m1[1]*c, m0[2]*a + C[2]*b + m1[2]*c];
+  }
+  plen(i){
+    this.ensure(i);
+    if (this.lens[i] == null){ let L = 0, pr = this.bez(i, 0); for (let k = 1; k <= 8; k++){ const q = this.bez(i, k/8); L += v3.dist(pr, q); pr = q; } this.lens[i] = Math.max(L, 1e-3); }
+    return this.lens[i];
+  }
+  at(i, d){ while (d > this.plen(i)){ d -= this.plen(i); i++; } return this.bez(i, d/this.plen(i)); }
+  advance(dist, onPiece){
+    this.d += dist;
+    while (this.d > this.plen(this.i)){ this.d -= this.plen(this.i); this.i++; onPiece(this.pts[this.i], this.pts[this.i - 1]); }
+    this.ensure(this.i + 6);
+    if (this.i > 260){ const cut = 200; this.pts.splice(0, cut); this.lens.splice(0, cut); this.i -= cut; }
+  }
+  braking(){ if (!this.plan) return false; for (let k = -1; k < 6; k++){ const p = this.pts[this.i + k]; if (p && (p.grow || p.kind)) return true; } return false; }
+}
+
+/* ================================================================
+   State
+   ================================================================ */
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('nxr:' + k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem('nxr:' + k, JSON.stringify(v)); } catch(e){} },
+};
+const TIMING = {rare:[10, 40], random:[3, 20], often:[3, 8], beat:[8, 16]};
+const TIMING_HINT = {
+  rare:'Rare: a turn every 10 to 40 seconds.',
+  random:'Random: a turn every 3 to 20 seconds, never on a pattern.',
+  often:'Often: a turn every 3 to 8 seconds.',
+  beat:'On the beat: a turn every 4 to 8 bars, timed to land on the music.',
+};
+const state = {
+  palette:store.get('palette', 'nexus'), look:store.get('look', 'clean'), timing:store.get('timing', 'random'), artery:store.get('artery', 'medium'),
+  cards:store.get('cards', 'on'), chanC:store.get('chanC', .62), speed:store.get('speed', 1), trail:store.get('trail', 1), quality:store.get('quality', 'auto'),
+  auto:true, ghost:store.get('ghost', true), dropTurn:store.get('dropTurn', true), sens:store.get('sens', 1),
+};
+if (!PALETTES.some(p => p.id === state.palette)) state.palette = 'nexus';
+if (!LOOKS.some(l => l.id === state.look)) state.look = 'clean';
+if (!TIMING[state.timing]) state.timing = 'random';
+if (!ARTERY[state.artery]) state.artery = 'medium';
+if (![.48, .62, .76].includes(state.chanC)) state.chanC = .62;
+let clock = 0, speedNow = 1, rate = 3.4, la = 1.05;
+let camF = [0, 0, 1], camUp = [0, 1, 0], camPos = [0, 0, -6], camR = [1, 0, 0], camU = [0, 1, 0];
+legs = [new Leg([0, 0, -40], [0, 0, 1], [0, 1, 0], 0, .8, false, 1)];
+let route = new Route(legs[0], 34);
+let look = [0, 0], lookTarget = [0, 0], renderScale = isTouch ? .6 : .8, uQ = .7;
+let widen = 0, junc = 0, shock = 1, lurch = 0, lastKickT = -9, beats = 0, beatsSince = 0, barsTarget = 6, nextTurnAt = 0, turnA = 0;
+let turns = 0, branch = 1, routeKind = 0, traveled = 0, cardT = 0, hist = [], segs = [{kind:0, len:0, bend:0}];
+const origin = [0, 0, 0], GP = 2*Math.PI/GSCALE;
+const turnLog = [];
+const TUNE = {brakeSpeed:2, laBrake:3, smoothBrake:4};
+
+/* ================================================================
+   Turn scheduling
+   ================================================================ */
+function scheduleNext(){
+  const r = TIMING[state.timing];
+  nextTurnAt = clock + r[0] + Math.random()*(r[1] - r[0]) - 1.4;   // the planner looks ~1.5 s ahead
+  beatsSince = 0; barsTarget = 4 + Math.floor(Math.random()*5);
+}
+function requestTurn(why){
+  if (route.plan || route.pending){ if (why === 'manual') toast('Already turning. The next one can go once this branch opens up.'); return; }
+  route.pending = true;
+  if (why === 'drop' && !reduceMotion) lurch = Math.max(lurch, .5);
+  turnLog.push({t:clock, why});
+  syncGo(); setRouteText();
+}
+function onBeat(){ beats++; beatsSince++; }
+function autoTurn(){
+  if (!state.auto || route.plan || route.pending) return;
+  if (state.timing === 'beat' && (audio.live() || state.ghost)){ if (beatsSince >= barsTarget*4 - 3) requestTurn('auto'); }
+  else if (clock >= nextTurnAt) requestTurn('auto');
+}
+function onPiece(p){
+  const P = route.plan;
+  if (p.grow && P) P.leg.target = 1;
+  if (p.junction){
+    junc = 1; routeKind = p.kind;
+    if (p.enter && P){ P.entered = true; P.enterT = clock; segs.push({kind:p.kind, len:0, bend:P.bendIn}); setRouteText(); }
+  }
+  if (p.legStart && P){
+    routeKind = 0; turns++; branch++;
+    segs.push({kind:0, len:0, bend:P.bendOut}); if (segs.length > 60) segs.shift();
+    P.old.dieAt = clock + .8;
+    lurch = reduceMotion ? .3 : 1; shock = reduceMotion ? 1 : 0;
+    turnLog.push({t:clock, why:'opened'});
+    route.plan = null; scheduleNext(); showCard(); setRouteText(); syncGo();
+  }
+}
+
+/* ================================================================
+   Frame
+   ================================================================ */
+function sizeCanvas(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let cw = Math.round(innerWidth*dpr), ch = Math.round(innerHeight*dpr);
+  const maxPx = 3.4e6;
+  if (cw*ch > maxPx){ const k = Math.sqrt(maxPx/(cw*ch)); cw = Math.round(cw*k); ch = Math.round(ch*k); }
+  if (canvas.width !== cw || canvas.height !== ch){ canvas.width = cw; canvas.height = ch; }
+  const qs = state.quality === 'low' ? .42 : state.quality === 'med' ? .65 : state.quality === 'high' ? 1 : renderScale;
+  uQ = state.quality === 'low' ? .2 : state.quality === 'med' ? .6 : state.quality === 'high' ? 1 : Math.min(1, Math.max(.2, (renderScale - .3)/.5));
+  iw = Math.max(64, Math.round(innerWidth*qs)); ih = Math.max(48, Math.round(innerHeight*qs));
+  ensureTargets(iw, ih);
+}
+function updateCamera(dt){
+  const p = route.at(route.i, route.d), a = route.at(route.i, route.d + la);
+  const fT = v3.norm(v3.sub(a, p));
+  const brk = route.braking();
+  camF = v3.norm(v3.mix(camF, fT, 1 - Math.exp(-dt*(brk ? TUNE.smoothBrake : 6.5))));
+  let up = v3.sub(camUp, v3.scl(camF, v3.dot(camUp, camF)));
+  if (v3.len(up) < .05) up = Math.abs(camF[1]) < .9 ? [0, 1, 0] : [1, 0, 0];
+  up = v3.norm(up);
+  const pc = route.pts[route.i];
+  if (routeKind === 0 && pc && pc.leg){
+    const lu = v3.sub(pc.leg.u, v3.scl(camF, v3.dot(pc.leg.u, camF)));
+    if (v3.len(lu) > .3) up = v3.norm(v3.mix(up, v3.norm(lu), 1 - Math.exp(-dt*.7)));
+  }
+  camUp = up; camPos = p; camR = v3.norm(v3.cross(up, camF)); camU = v3.cross(camF, camR);
+}
+function legsTick(dt){
+  for (const L of legs){
+    if (L.dieAt && clock >= L.dieAt){ L.target = 0; L.dying = true; L.rate = 1/1.6; L.dieAt = 0; }
+    const dv = L.target - L.open;
+    L.open += Math.sign(dv)*Math.min(Math.abs(dv), L.rate*dt);
+  }
+  legs = legs.filter(L => !(L.dying && L.open <= 0));
+  while (legs.length > MAXL) legs.shift();
+  // keep the current leg's local coordinates small on long straight runs
+  if (!route.plan && !route.pending && route.zGen > 300 && route.cur.local(camPos)[2] > 280){ route.cur.shift(); route.zGen -= PERIOD; }
+  // and keep world coordinates small on the GPU: the gyroid repeats every 2π/1.3 on each axis
+  for (let k = 0; k < 3; k++) if (Math.abs(camPos[k] - origin[k]) > 60) origin[k] = Math.round(camPos[k]/GP)*GP;
+}
+function step(dt){
+  clock += dt;
+  audio.update(dt, clock);
+  autoTurn();
+  const E = audio.env;
+  lurch *= Math.exp(-dt*1.8); junc *= Math.exp(-dt*5); if (shock < 1) shock = Math.min(1, shock + dt/.9);
+  if (cardT > 0 && (cardT -= dt) <= 0) $('#card').classList.remove('show');
+  legsTick(dt);
+  const brake = route.braking();
+  let target = 3.4*state.speed*(1 + .3*E.bass + .7*E.kick)*(1 + lurch*.9);
+  if (brake) target = Math.min(target, TUNE.brakeSpeed);
+  rate += (target - rate)*(1 - Math.exp(-dt*(brake ? 5 : 2.5)));
+  speedNow = rate/3.4;
+  const ds = rate*dt;
+  route.advance(ds, onPiece);
+  traveled += ds; segs[segs.length - 1].len += ds;
+  la += ((brake ? TUNE.laBrake : 1.05) - la)*(1 - Math.exp(-dt*3));
+  const armed = route.pending || (route.plan && !route.plan.entered);
+  turnA += ((armed ? 1 : 0) - turnA)*(1 - Math.exp(-dt*(armed ? 2.5 : 9)));
+  let near = false; for (let k = -2; k <= 2; k++){ const q = route.pts[route.i + k]; if (q && q.kind) near = true; }
+  widen += ((near ? 1 : 0) - widen)*(1 - Math.exp(-dt*2.5));
+  updateCamera(dt);
+  const k = 1 - Math.exp(-dt*7);
+  look[0] += (lookTarget[0] - look[0])*k; look[1] += (lookTarget[1] - look[1])*k;
+  const last = hist[hist.length - 1];
+  if (!last || v3.dist(last.p, camPos) > .3){ hist.push({p:camPos, k:routeKind}); if (hist.length > 220) hist.shift(); }
+}
+const LO = new Float32Array(4*MAXL), LR = new Float32Array(4*MAXL), LF = new Float32Array(4*MAXL), LX = new Float32Array(4*MAXL);
+function render(){
+  sizeCanvas();
+  if (![sceneP, fxP, brightP, downP, upP, finalP].every(ready)) return false;
+  const E = audio.env, pal = PALETTES.find(p => p.id === state.palette);
+  const shake = reduceMotion ? 0 : E.kick*.01;
+  const camM = [camR[0], camR[1], camR[2], camU[0], camU[1], camU[2], camF[0], camF[1], camF[2]];
+  const live = legs.slice(-MAXL);
+  live.forEach((L, i) => {
+    LO.set([L.O[0] - origin[0], L.O[1] - origin[1], L.O[2] - origin[2], L.len], i*4);
+    LR.set([L.r[0], L.r[1], L.r[2], L.amp], i*4); LF.set([L.f[0], L.f[1], L.f[2], L.ph], i*4);
+    LX.set([Math.max(0, Math.min(1, L.open)), L.ramp ? 1 : 0, L.P0[0], L.P0[1]], i*4);
+  });
+  target(RT.scene); gl.useProgram(sceneP.p);
+  const P = sceneP;
+  f2(P, 'uRes', iw, ih); f1(P, 'uTime', clock); f1(P, 'uKick', E.kick); f1(P, 'uBass', E.bass); f1(P, 'uHat', E.hat);
+  f1(P, 'uQ', uQ); f1(P, 'uFov', 1.12 + .28*widen + lurch*.12); f1(P, 'uTubeR', TUBE_R); f1(P, 'uChanC', state.chanC); f1(P, 'uWiden', widen);
+  f1(P, 'uWave', (clock - lastKickT)*17); f1(P, 'uJunc', junc); f1(P, 'uTurnA', turnA);
+  f3(P, 'uCamPos', v3.sub(camPos, origin)); m3(P, 'uCamRot', camM);
+  const tp = route.plan ? route.plan.V0 : camPos;
+  f3(P, 'uTurnPt', v3.sub(tp, origin));
+  f3(P, 'uColT', pal.T); f3(P, 'uColA', pal.A); f3(P, 'uColB', pal.B);
+  f2(P, 'uLook', look[0] + (Math.random() - .5)*shake, look[1] + (Math.random() - .5)*shake);
+  i1(P, 'uLegN', live.length);
+  const l4 = (n, a) => { const l = U(P, n); if (l) gl.uniform4fv(l, a); };
+  l4('uLO', LO); l4('uLR', LR); l4('uLF', LF); l4('uLX', LX);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const cur = RT.fx[RT.ping], prev = RT.fx[1 - RT.ping]; RT.ping = 1 - RT.ping;
+  target(cur); gl.useProgram(fxP.p);
+  tex2(0, RT.scene.tex); i1(fxP, 'uScene', 0); tex2(1, prev.tex); i1(fxP, 'uPrev', 1);
+  f2(fxP, 'uRes', iw, ih); f1(fxP, 'uShock', shock); f1(fxP, 'uTrail', Math.min(.95, .3*state.trail));
+  f1(fxP, 'uBlur', Math.min(3, .45*speedNow + E.kick*1.2 + lurch*1.5)); f1(fxP, 'uCA', .35 + E.kick + E.hat*.4 + lurch*.8); f1(fxP, 'uSpin', .004*Math.sin(clock*.3));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const B = RT.bloom;
+  target(B[0]); gl.useProgram(brightP.p); tex2(0, cur.tex); i1(brightP, 'uSrc', 0); f2(brightP, 'uTexel', 1/cur.w, 1/cur.h); f1(brightP, 'uTh', .7);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(downP.p); i1(downP, 'uSrc', 0);
+  for (let i = 1; i < B.length; i++){ target(B[i]); tex2(0, B[i - 1].tex); f2(downP, 'uTexel', 1/B[i - 1].w, 1/B[i - 1].h); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(upP.p); i1(upP, 'uSrc', 0);
+  for (let i = B.length - 1; i > 0; i--){ target(B[i - 1]); tex2(0, B[i].tex); f2(upP, 'uTexel', 1/B[i].w, 1/B[i].h); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.disable(gl.BLEND);
+  target(null); gl.useProgram(finalP.p);
+  tex2(0, cur.tex); i1(finalP, 'uFx', 0); tex2(1, B[0].tex); i1(finalP, 'uBloom', 1); tex2(2, blueTex); i1(finalP, 'uBlue', 2);
+  f2(finalP, 'uRes', canvas.width, canvas.height); f1(finalP, 'uTime', clock); f1(finalP, 'uKick', E.kick);
+  f1(finalP, 'uFlash', reduceMotion ? 0 : lurch*.18); f1(finalP, 'uBloomAmt', .95*(1 + .5*E.kick)); f1(finalP, 'uExposure', 1.2*(1 + .12*E.kick));
+  i1(finalP, 'uLook', LOOKS.find(l => l.id === state.look).n);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return true;
+}
+
+let ema = 1/60, slowT = 0, fastT = 0, last = performance.now(), frames = 0, perfT = 0;
+function adapt(dt){
+  ema += (dt - ema)*.08;
+  if (state.quality !== 'auto') return;
+  if (ema > 1/42){ slowT += dt; fastT = 0; if (slowT > .6){ renderScale = Math.max(.3, renderScale*.88); slowT = 0; } }
+  else if (ema < 1/57){ fastT += dt; slowT = 0; if (fastT > 2.5){ renderScale = Math.min(1, renderScale*1.06); fastT = 0; } }
+  else { slowT = 0; fastT = 0; }
+}
+function loop(now){
+  const dt = Math.min(.1, Math.max(0, (now - last)/1000)); last = now;
+  step(dt); render(); adapt(dt); hudTick(dt);
+  requestAnimationFrame(loop);
+}
+
+/* ================================================================
+   HUD
+   ================================================================ */
+const hud = $('#hud'), sheet = $('#sheet'), toastEl = $('#toast'), mapC = $('#map'), mctx = mapC.getContext('2d');
+const bars = [...document.querySelectorAll('#bars i')], bpmEl = $('#bpm'), srcEl = $('#src');
+let idleTimer = 0, toastTimer = 0, openTab = null, meterT = 0, descCache = '';
+const css = c => 'rgb(' + c.map(v => Math.round(Math.min(1, v)*255)).join(',') + ')';
+const pad2 = n => String(n).padStart(2, '0');
+function toast(msg, secs = 3.2){ toastEl.textContent = msg; toastEl.classList.add('show'); toastTimer = secs; }
+function wake(){ idleTimer = 0; hud.classList.remove('idle'); }
+function showCard(){
+  if (state.cards !== 'on') return;
+  $('#cardText').textContent = 'BRANCH ' + pad2(branch);
+  $('#card').classList.add('show'); cardT = 1.3;
+}
+function routeDesc(){
+  const pal = PALETTES.find(p => p.id === state.palette), P = route.plan;
+  if (routeKind !== 0 && P) return 'Through the ' + (P.kind === 1 ? pal.an : pal.bn) + ' artery. It opens into branch ' + pad2(branch + 1) + '.';
+  if (P && !P.entered){
+    const secs = v3.dist(camPos, P.V0)/Math.max(rate, .5), bpm = audio.bpm || 122, b = Math.round(secs*bpm/60);
+    return 'Turning into the ' + (P.kind === 1 ? pal.an : pal.bn) + ' artery at ' + P.clock + " o'clock" + (b > 1 ? ', in ' + b + ' beats.' : ', now.');
+  }
+  if (route.pending) return 'Picking the next side artery.';
+  return 'Side arteries open off the walls on every side.';
+}
+function setRouteText(){
+  const pal = PALETTES.find(p => p.id === state.palette), h = $('#route'), P = route.plan;
+  if (routeKind !== 0 && P){
+    h.textContent = 'Turning'; h.classList.add("turning");
+    h.style.setProperty('--route-color', css(P.kind === 1 ? pal.A : pal.B));
+  } else { h.textContent = 'Branch ' + pad2(branch); h.classList.remove("turning"); }
+  const d = routeDesc();
+  if (d !== descCache){ $('#routeDesc').textContent = d; descCache = d; }
+}
+function syncGo(){ $('#goBtn').classList.toggle('armed', !!(route.pending || route.plan)); }
+// heading-up schematic: each turn is drawn as a bend, newest at the bottom centre
+function drawMap(){
+  const W = mapC.width, H = mapC.height, pal = PALETTES.find(p => p.id === state.palette), P = route.plan;
+  mctx.clearRect(0, 0, W, H);
+  const sc = W/30, cx = W/2, cy = H*.64;
+  mctx.lineCap = 'round'; mctx.lineJoin = 'round';
+  const col = k => css(k === 0 ? pal.T : k === 1 ? pal.A : pal.B);
+  if (P && !P.entered){
+    const D = Math.min(12, v3.dist(camPos, P.V0));
+    let x = cx, y = cy, h = 0;
+    const seg = (L, c) => { const x2 = x + Math.sin(h)*L*sc, y2 = y - Math.cos(h)*L*sc; mctx.strokeStyle = c; mctx.beginPath(); mctx.moveTo(x, y); mctx.lineTo(x2, y2); mctx.stroke(); x = x2; y = y2; };
+    mctx.setLineDash([W*.02, W*.022]); mctx.lineWidth = W*.014;
+    seg(D, 'rgba(255,255,255,.45)'); h += P.bendIn; seg(2.5, col(P.kind)); h += P.bendOut; seg(6, col(0));
+    mctx.setLineDash([]);
+  }
+  let x = cx, y = cy, h = 0, drawn = 0;
+  mctx.lineWidth = W*.022;
+  for (let k = segs.length - 1; k >= 0 && drawn < 34; k--){
+    const s = segs[k], L = Math.min(s.len, 34 - drawn);
+    const x2 = x - Math.sin(h)*L*sc, y2 = y + Math.cos(h)*L*sc;
+    mctx.globalAlpha = Math.max(.2, 1 - drawn/34);
+    mctx.strokeStyle = col(s.kind); mctx.beginPath(); mctx.moveTo(x, y); mctx.lineTo(x2, y2); mctx.stroke();
+    x = x2; y = y2; h -= s.bend; drawn += L;
+  }
+  mctx.globalAlpha = 1;
+  mctx.fillStyle = '#fff'; mctx.beginPath(); mctx.arc(cx, cy, W*.03, 0, Math.PI*2); mctx.fill();
+}
+function hudTick(dt){
+  if (toastTimer > 0 && (toastTimer -= dt) <= 0) toastEl.classList.remove('show');
+  if (!openTab){ idleTimer += dt; if (idleTimer > 8) hud.classList.add('idle'); }
+  meterT += dt;
+  if (meterT > 1/30){
+    meterT = 0;
+    const E = audio.env, vals = [E.kick, E.bass, E.mid, E.high, E.hat];
+    bars.forEach((b, i) => { b.style.transform = 'scaleY(' + (.08 + .92*Math.min(1, vals[i])).toFixed(3) + ')'; });
+    const bpm = audio.bpm ? Math.round(audio.bpm) : '—';
+    if (bpmEl.textContent !== String(bpm)) bpmEl.textContent = bpm;
+    const src = audio.kind === 'file' ? (audio.el && audio.el.paused ? 'Paused · ' : '') + audio.fileName : audio.kind === 'mic' ? 'Mic / line-in' : state.ghost ? 'Ghost beat' : 'No audio';
+    if (srcEl.textContent !== src) srcEl.textContent = src;
+    $('#statTurns').textContent = turns; $('#lblTurns').textContent = turns === 1 ? 'turn' : 'turns';
+    $('#statDist').textContent = traveled < 1000 ? Math.round(traveled) : (traveled/1000).toFixed(1) + 'k';
+    const d = routeDesc(); if (d !== descCache){ $('#routeDesc').textContent = d; descCache = d; }
+    if (!hud.classList.contains('idle') && !hud.classList.contains('off')) drawMap();
+  }
+  perfT += dt; frames++;
+  if (perfT > 1){ if (openTab === 'tune') $('#perf').textContent = Math.round(frames/perfT) + ' fps · rendering ' + iw + '×' + ih + ' and scaling up' + (floatOK ? '' : ' · 8-bit buffers on this device'); perfT = 0; frames = 0; }
+}
+function applyPaletteVars(){
+  const pal = PALETTES.find(p => p.id === state.palette), r = document.documentElement.style;
+  r.setProperty('--a', css(pal.A)); r.setProperty('--b', css(pal.B)); r.setProperty('--gold', css(pal.T.map(v => .55 + .45*v)));
+}
+function buildUI(){
+  const pc = $('#paletteChips');
+  PALETTES.forEach(p => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.v = p.id;
+    const sw = document.createElement('span'); sw.className = 'swatch';
+    [p.T, p.A, p.B].forEach(c => { const i = document.createElement('i'); i.style.background = css(c); sw.appendChild(i); });
+    b.appendChild(sw); b.appendChild(document.createTextNode(p.name));
+    b.addEventListener('click', () => { state.palette = p.id; store.set('palette', p.id); syncUI(); });
+    pc.appendChild(b);
+  });
+  const lc = $('#lookChips');
+  LOOKS.forEach(l => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.v = l.id; b.textContent = l.name;
+    b.addEventListener('click', () => { state.look = l.id; store.set('look', l.id); syncUI(); });
+    lc.appendChild(b);
+  });
+  document.querySelectorAll('.dock [data-tab]').forEach(b => b.addEventListener('click', () => toggleTab(b.dataset.tab)));
+  $('#goBtn').addEventListener('click', () => requestTurn('manual'));
+  $('#autoBtn').addEventListener('click', () => { state.auto = !state.auto; scheduleNext(); syncUI(); toast(state.auto ? 'Auto turns on.' : 'Auto turns off. Press Turn or Space to take one.'); });
+  const seg = (id, key, parse, after) => $(id).querySelectorAll('button').forEach(b => b.addEventListener('click', () => { state[key] = parse(b.dataset.v); store.set(key, state[key]); after && after(); syncUI(); }));
+  seg('#timing', 'timing', String, scheduleNext); seg('#artery', 'artery', String); seg('#cards', 'cards', String);
+  seg('#width', 'chanC', Number); seg('#quality', 'quality', String);
+  const range = id => { const el = $('#' + id); el.value = state[id]; el.addEventListener('input', () => { state[id] = Number(el.value); store.set(id, state[id]); syncUI(); }); };
+  range('speed'); range('trail'); range('sens');
+  $('#ghost').checked = state.ghost; $('#ghost').addEventListener('change', e => { state.ghost = e.target.checked; store.set('ghost', state.ghost); });
+  $('#dropTurn').checked = state.dropTurn; $('#dropTurn').addEventListener('change', e => { state.dropTurn = e.target.checked; store.set('dropTurn', state.dropTurn); });
+  $('#file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadTrack(f); e.target.value = ''; });
+  $('#micBtn').addEventListener('click', async () => {
+    try { await audio.useMic(); toast('Listening to the mic or line-in.'); syncUI(); }
+    catch(err){ toast('The mic is blocked here. Load a track instead, or serve this folder locally (python3 -m http.server) and open it from localhost.', 6); }
+  });
+  $('#playBtn').addEventListener('click', () => { if (!audio.el) return; if (audio.el.paused){ audio.ensure(); audio.el.play(); } else audio.el.pause(); syncUI(); });
+  $('#fsBtn').addEventListener('click', toggleFS);
+  $('#hideBtn').addEventListener('click', () => { toggleTab(null); hud.classList.add('off'); toast('Controls hidden. Tap the screen to bring them back.'); });
+}
+async function loadTrack(f){
+  try { await audio.useFile(f); toast('Playing ' + audio.fileName + '. The BPM settles after a few bars.'); }
+  catch(err){ toast("That file wouldn't play here. Try an MP3 or WAV.", 5); }
+  syncUI();
+}
+function toggleTab(tab){
+  openTab = openTab === tab ? null : tab;
+  sheet.hidden = !openTab;
+  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.dataset.panel !== openTab; });
+  document.querySelectorAll('.dock [data-tab]').forEach(b => b.classList.toggle('open', b.dataset.tab === openTab));
+  wake();
+}
+function syncUI(){
+  const pressed = (sel, v) => document.querySelectorAll(sel + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v) === String(v)));
+  pressed('#paletteChips', state.palette); pressed('#lookChips', state.look); pressed('#timing', state.timing); pressed('#artery', state.artery);
+  pressed('#cards', state.cards); pressed('#width', state.chanC); pressed('#quality', state.quality);
+  $('#timingHint').textContent = TIMING_HINT[state.timing];
+  $('#autoBtn').setAttribute('aria-pressed', state.auto);
+  const fmt = v => Number(v).toFixed(2).replace(/0$/, '') + '×';
+  $('#speedOut').textContent = fmt(state.speed); $('#trailOut').textContent = fmt(state.trail); $('#sensOut').textContent = fmt(state.sens);
+  $('#paletteName').textContent = PALETTES.find(p => p.id === state.palette).name;
+  $('#lookName').textContent = LOOKS.find(l => l.id === state.look).name;
+  $('#playBtn').hidden = audio.kind !== 'file';
+  if (audio.el) $('#playBtn').textContent = audio.el.paused ? 'Play' : 'Pause';
+  $('#vhs').hidden = state.look !== 'vhs';
+  applyPaletteVars(); setRouteText(); syncGo();
+}
+function toggleFS(){
+  const d = document;
+  if (!d.fullscreenElement){ const r = d.documentElement.requestFullscreen && d.documentElement.requestFullscreen(); if (r && r.catch) r.catch(() => toast('Fullscreen is not available in this view.')); else if (!r) toast('Fullscreen is not available in this view.'); }
+  else d.exitFullscreen && d.exitFullscreen();
+}
+(() => { const d = new Date(); $('#vhsDate').textContent = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()] + ' ' + String(d.getDate()).padStart(2, '0') + ' 1997'; })();
+
+/* ---------- input ---------- */
+let drag = null, wakeLock = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = {x:e.clientX, y:e.clientY, t:performance.now(), moved:false};
+  try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+  audio.ctx && audio.ctx.state === 'suspended' && audio.ctx.resume();
+  if (!wakeLock && navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { wakeLock = l; }).catch(() => {});
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 8) drag.moved = true;
+  lookTarget = [Math.max(-.7, Math.min(.7, dx/innerWidth*1.4)), Math.max(-.6, Math.min(.6, -dy/innerHeight*1.2))];
+});
+const endDrag = () => {
+  if (drag && !drag.moved && performance.now() - drag.t < 350){
+    if (openTab) toggleTab(null);
+    else if (hud.classList.contains('off') || hud.classList.contains('idle')){ hud.classList.remove('off'); wake(); }
+    else hud.classList.add('idle');
+  }
+  drag = null; lookTarget = [0, 0];
+};
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+document.addEventListener('pointermove', e => { if (e.target !== canvas) wake(); });
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'range') return;
+  const k = e.key.toLowerCase();
+  if (k === ' '){ e.preventDefault(); requestTurn('manual'); }
+  else if (k === 'a') $('#autoBtn').click();
+  else if (k === 'p'){ const i = PALETTES.findIndex(p => p.id === state.palette); state.palette = PALETTES[(i + 1) % PALETTES.length].id; store.set('palette', state.palette); toast('Palette: ' + PALETTES.find(p => p.id === state.palette).name); }
+  else if (k === 'l'){ const i = LOOKS.findIndex(l => l.id === state.look); state.look = LOOKS[(i + 1) % LOOKS.length].id; store.set('look', state.look); toast('Look: ' + LOOKS.find(l => l.id === state.look).name); }
+  else if (k === 'arrowup'){ e.preventDefault(); state.speed = Math.min(3, +(state.speed + .1).toFixed(2)); $('#speed').value = state.speed; store.set('speed', state.speed); }
+  else if (k === 'arrowdown'){ e.preventDefault(); state.speed = Math.max(.25, +(state.speed - .1).toFixed(2)); $('#speed').value = state.speed; store.set('speed', state.speed); }
+  else if (k === 'h') hud.classList.toggle('off');
+  else if (k === 'f') toggleFS();
+  else return;
+  wake(); syncUI();
+});
+const dropEl = $('#drop');
+window.addEventListener('dragover', e => { e.preventDefault(); dropEl.hidden = false; });
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) dropEl.hidden = true; });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dropEl.hidden = true;
+  const f = [...(e.dataTransfer && e.dataTransfer.files || [])].find(f => /^audio\//.test(f.type) || /\.(mp3|wav|aiff?|flac|m4a|ogg)$/i.test(f.name));
+  if (f) loadTrack(f); else toast('Drop an audio file: MP3, WAV, AIFF or FLAC.');
+});
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); toast('The graphics context was lost. Reload the page to restart.', 8); });
+
+/* ---------- boot ---------- */
+buildUI(); syncUI(); scheduleNext();
+for (let k = 0; k < 30; k++) updateCamera(1/60);
+
+window.__nx = {
+  errors,
+  compile(){ [sceneP, fxP, brightP, downP, upP, finalP].forEach(P => { gl.getProgramParameter(P.p, gl.LINK_STATUS); ready(P); }); return errors.slice(); },
+  // advance the whole simulation at 60 fps and report what a reviewer needs to trust it
+  sim(seconds, o = {}){
+    if (o.timing) state.timing = o.timing; if (o.artery) state.artery = o.artery; if (o.speed) state.speed = o.speed; if (o.chanC) state.chanC = o.chanC;
+    if (o.turnNow) requestTurn('manual');
+    if (o.tune) Object.assign(TUNE, o.tune);
+    let maxLag = 0, lags = [], frees = [];
+    let minClear = 9, minWithWiden = 9, maxLegs = 0, maxYaw = 0, yawSum = [], prevF = camF.slice(), bad = 0, worst = null;
+    const t0 = turnLog.length;
+    for (let f = 0; f < seconds*60; f++){
+      step(1/60);
+      const v = voidAt(camPos);
+      const vw = Math.max(tubeVoid(camPos), chanV(camPos) + widen*.5/2.4);
+      if (v < minClear){ minClear = v; worst = {v:+v.toFixed(3), kind:routeKind, plan:!!route.plan, legs:legs.map(L => +L.open.toFixed(2))}; }
+      minWithWiden = Math.min(minWithWiden, vw);
+      maxLegs = Math.max(maxLegs, legs.length);
+      const yaw = Math.acos(Math.min(1, v3.dot(prevF, camF)))*180/Math.PI*60; prevF = camF.slice();
+      maxYaw = Math.max(maxYaw, yaw); yawSum.push(yaw);
+      const tg = v3.norm(v3.sub(route.at(route.i, route.d + .3), camPos)), lag = Math.acos(Math.min(1, v3.dot(tg, camF)))*180/Math.PI; maxLag = Math.max(maxLag, lag); lags.push(lag);
+      if (f % 6 === 0){ let t = .05; for (let k = 0; k < 40 && t < 6; k++){ const v = voidAt(v3.add(camPos, v3.scl(camF, t))); if (v < .01) break; t += Math.max(v*.8, .03); } frees.push(t); }
+      if (![...camPos, ...camF].every(Number.isFinite) || legs.some(L => ![...L.O, L.open, L.ph].every(Number.isFinite))) bad++;
+    }
+    yawSum.sort((a, b) => a - b);
+    const log = turnLog.slice(t0);
+    const opens = log.filter(e => e.why === 'opened').map(e => e.t), reqs = log.filter(e => e.why !== 'opened').map(e => e.t);
+    const gaps = []; for (const ot of opens){ const nx = reqs.find(r => r > ot); if (nx) gaps.push(+(nx - ot).toFixed(1)); }
+    return {turns, branch, minClear:+minClear.toFixed(3), minWithWiden:+minWithWiden.toFixed(3), worst, maxLegs, maxYaw:Math.round(maxYaw), p99Yaw:Math.round(yawSum[Math.floor(yawSum.length*.99)]),
+      bad, maxLag:Math.round(maxLag), p99Lag:Math.round(lags.sort((a, b) => a - b)[Math.floor(lags.length*.99)]), freeAheadMin:+Math.min(...frees).toFixed(2), freeAheadP1:+frees.sort((a, b) => a - b)[Math.floor(frees.length*.01)].toFixed(2), gaps:gaps.slice(0, 12), legsNow:legs.length, origin:origin.map(v => +v.toFixed(1)), cam:camPos.map(v => +v.toFixed(1)), curLz:+route.cur.local(camPos)[2].toFixed(1)};
+  },
+  shot(o = {}){ if (o.palette) state.palette = o.palette; if (o.look) state.look = o.look; for (let k = 0; k < 4; k++) render(); return canvas.toDataURL('image/png'); },
+  status(){ return {routeKind, plan:!!route.plan, entered:!!(route.plan && route.plan.entered), pending:route.pending, turns, branch, legs:legs.map(L => +L.open.toFixed(2)), cam:camPos.map(v => +v.toFixed(2)), widen:+widen.toFixed(2), bpm:audio.bpm}; },
+};
+if (!TEST) requestAnimationFrame(t => { last = t; loop(t); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wormhole Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Michroma&display=swap">
+<style>
+/* Layout: full-bleed WebGL stage. The HUD floats on top: mode title top-left, audio meters top-right, dock and pull-up sheet along the bottom. */
+:root{
+  --void:#04050a;
+  --ink:#e9edf6;
+  --dim:#9099ae;
+  --glass:rgba(9,11,19,.68);
+  --line:rgba(170,192,235,.2);
+  --gold:#ffcf7a;
+  --ice:#9fdcff;
+  --f-display:"Michroma","Eurostile","Microgramma","Arial Black",sans-serif;
+  --f-ui:"Chakra Petch",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;background:var(--void);color:var(--ink);overflow:hidden}
+body{margin:0;font:14px/1.45 var(--f-ui);-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;background:var(--void)}
+#stage:active{cursor:grabbing}
+.scrim{position:fixed;left:0;right:0;top:0;height:180px;pointer-events:none;background:linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,0));transition:opacity .6s}
+#hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 12px)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.ident{max-width:min(560px,68vw);transition:opacity 1.2s}
+.ident.dim{opacity:.32}
+.brand{font:600 11px/1 var(--f-ui);letter-spacing:.28em;color:var(--dim);text-transform:uppercase}
+.brand b{color:var(--gold);font-weight:600}
+h1{font:400 clamp(20px,4.4vw,42px)/1.08 var(--f-display);letter-spacing:.03em;margin:.32em 0 .22em;text-wrap:balance;text-shadow:0 2px 22px rgba(0,0,0,.7)}
+#modeDesc{margin:0;color:var(--ink);opacity:.78;max-width:46ch;text-shadow:0 1px 10px rgba(0,0,0,.8)}
+.meters{display:flex;flex-direction:column;align-items:flex-end;gap:6px;transition:opacity .5s;flex:none}
+.bpm{display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
+.bpm b{font:400 22px/1 var(--f-display)}
+.bpm span{font-size:11px;letter-spacing:.2em;color:var(--dim)}
+.bars{display:flex;gap:3px;height:26px;align-items:flex-end}
+.bars i{display:block;width:6px;height:100%;background:var(--ice);transform-origin:bottom;transform:scaleY(.1);border-radius:1px;opacity:.85}
+.bars i:first-child{background:var(--gold)}
+.src{font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;max-width:40vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bottom{display:flex;flex-direction:column;gap:8px;width:100%;max-width:760px;margin:0 auto;pointer-events:none}
+.sheet,.dock{pointer-events:auto}
+.sheet{background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:14px;max-height:min(52vh,440px);overflow:auto;
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);overscroll-behavior:contain;touch-action:pan-y}
+.dock{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;transition:opacity .5s,transform .5s}
+button,.btn{font:600 11px/1 var(--f-ui);letter-spacing:.13em;text-transform:uppercase;color:var(--ink);background:var(--glass);
+  border:1px solid var(--line);border-radius:10px;padding:13px 6px;cursor:pointer;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  display:inline-flex;align-items:center;justify-content:center;text-align:center;min-width:0}
+button:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
+button[aria-pressed="true"],.dock button.open{border-color:var(--ice);color:var(--ice)}
+.dock .punch{background:linear-gradient(180deg,#ffe2a6,var(--gold));color:#1a1000;border-color:transparent}
+.dock .punch:active{transform:scale(.97)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.card{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-transform:none;letter-spacing:0;padding:10px 11px;text-align:left;font:500 13px/1.25 var(--f-ui)}
+.card .no{font:600 10px/1 var(--f-ui);letter-spacing:.2em;color:var(--dim)}
+.card .nm{font:400 12px/1.2 var(--f-display);letter-spacing:.02em}
+.card .ds{font-size:12px;color:var(--dim);line-height:1.3}
+.card[aria-pressed="true"] .no{color:var(--ice)}
+.card.bad{opacity:.4}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:11px 12px}
+.panel{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.row > *{flex:1 1 140px}
+.hint{margin:0;color:var(--dim);font-size:12.5px;max-width:62ch}
+.field{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:10px}
+.field label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.field output{color:var(--ink);font-variant-numeric:tabular-nums;margin-left:4px}
+input[type=range]{width:100%;accent-color:var(--gold)}
+.seg{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:10px}
+.seg > span{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.seg > div{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{padding:10px 11px;flex:1 1 auto}
+.toggles{display:flex;flex-direction:column;gap:8px}
+.toggles label{display:flex;gap:10px;align-items:center;font-size:13px}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold)}
+.keys{margin:0;color:var(--dim);font-size:12px;letter-spacing:.04em}
+.keys kbd{font:600 11px var(--f-ui);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--ink)}
+#hud.idle .dock,#hud.idle .meters{opacity:0;pointer-events:none}
+#hud.idle .ident{opacity:.0}
+#hud.off .dock,#hud.off .meters,#hud.off .ident,#hud.off .sheet{opacity:0;pointer-events:none}
+#hud.off ~ .scrim,#hud.idle ~ .scrim{opacity:0}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 16px);transform:translate(-50%,-140%);max-width:min(520px,calc(100vw - 32px));
+  background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;transition:transform .35s,opacity .35s;
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);pointer-events:none;z-index:5;opacity:0}
+#toast.show{transform:translate(-50%,0);opacity:1}
+#drop{position:fixed;inset:12px;border:2px dashed var(--gold);border-radius:18px;display:flex;align-items:center;justify-content:center;
+  font:400 clamp(18px,4vw,34px) var(--f-display);color:var(--gold);background:rgba(4,5,10,.55);pointer-events:none;z-index:6}
+#vhs{position:fixed;left:calc(16px + 2vw);bottom:calc(env(safe-area-inset-bottom,0px) + 86px);font:600 clamp(16px,3.4vw,30px)/1.3 "Courier New",ui-monospace,monospace;
+  color:#f4f4f4;text-shadow:2px 0 #ff2a6d,-2px 0 #2de2ff;letter-spacing:.06em;pointer-events:none;display:flex;flex-direction:column}
+#nogl{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding-inline:24px;text-align:center;color:var(--ink);font-size:16px}
+@media (max-width:520px){
+  .dock button{font-size:10px;letter-spacing:.08em;padding:13px 2px}
+  .field,.seg{grid-template-columns:1fr;gap:6px}
+  #modeDesc{font-size:13px}
+}
+@media (prefers-reduced-motion:reduce){ #toast,.ident,.dock{transition:none} }
+</style>
+
+</head>
+<body>
+<canvas id="stage" aria-label="Wormhole visual. Drag to look around, tap to show or hide controls."></canvas>
+<div id="hud">
+  <header class="top">
+    <div class="ident" id="ident">
+      <div class="brand"><b>Wormhole Lab</b> · <span id="modeIdx">01 of 15</span> · <span id="lookName">Film '97</span></div>
+      <h1 id="modeName">Contact '97</h1>
+      <p id="modeDesc">Loading…</p>
+    </div>
+    <div class="meters">
+      <div class="bpm"><b id="bpm">122</b><span>BPM</span></div>
+      <div class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="src" id="src">Ghost beat</div>
+    </div>
+  </header>
+  <div class="bottom">
+    <section id="sheet" class="sheet" hidden>
+      <div class="panel" data-panel="modes"><div class="grid" id="modeGrid"></div></div>
+      <div class="panel" data-panel="look" hidden>
+        <div class="chips" id="lookChips"></div>
+        <p class="hint">Auto uses each mode's own look. Pick any other look to lock it across every mode.</p>
+      </div>
+      <div class="panel" data-panel="audio" hidden>
+        <div class="row">
+          <label class="btn" for="file" id="fileLabel">Load a track</label>
+          <button id="micBtn" type="button">Use mic or line-in</button>
+          <button id="playBtn" type="button" hidden>Pause</button>
+        </div>
+        <input type="file" id="file" accept="audio/*" hidden>
+        <p class="hint">MP3, WAV, AIFF or FLAC. You can also drop a file anywhere on the page. The kick drives speed surges and flashes, the sub makes the walls breathe, hats add sparkle. The mic only works when this file is opened straight in a browser, not on the hosted page.</p>
+        <div class="field"><label for="sens">Sensitivity <output id="sensOut">1.0×</output></label><input type="range" id="sens" min="0.4" max="2.5" step="0.05" value="1"></div>
+        <div class="toggles">
+          <label><input type="checkbox" id="ghost" checked> Ghost beat at 122 BPM when nothing is playing</label>
+          <label><input type="checkbox" id="dropPunch" checked> Punch through a membrane when the drop hits</label>
+        </div>
+      </div>
+      <div class="panel" data-panel="tune" hidden>
+        <div class="field"><label for="speed">Speed <output id="speedOut">1.0×</output></label><input type="range" id="speed" min="0.25" max="3" step="0.05" value="1"></div>
+        <div class="field"><label for="trail">Trails <output id="trailOut">1.0×</output></label><input type="range" id="trail" min="0" max="2" step="0.05" value="1"></div>
+        <div class="seg"><span>Membranes</span><div id="memEvery"><button data-v="0">Off</button><button data-v="4">4 bars</button><button data-v="8">8 bars</button><button data-v="16">16 bars</button></div></div>
+        <div class="seg"><span>Membrane</span><div id="memStyle"><button data-v="0">Liquid</button><button data-v="1">Mirror</button><button data-v="2">Grid</button></div></div>
+        <div class="seg"><span>Auto VJ</span><div id="autoBars"><button data-v="8">8 bars</button><button data-v="16">16 bars</button><button data-v="32">32 bars</button></div></div>
+        <div class="seg"><span>Quality</span><div id="quality"><button data-v="auto">Auto</button><button data-v="low">Low</button><button data-v="med">Medium</button><button data-v="high">High</button></div></div>
+        <div class="row"><button id="fsBtn" type="button">Fullscreen</button><button id="hideBtn" type="button">Hide controls</button></div>
+        <p class="keys"><kbd>Space</kbd> punch through · <kbd>←</kbd><kbd>→</kbd> mode · <kbd>1</kbd>–<kbd>9</kbd> jump · <kbd>L</kbd> look · <kbd>A</kbd> auto VJ · <kbd>H</kbd> hide · <kbd>F</kbd> fullscreen · drag to look around · tap to hide</p>
+        <p class="hint" id="perf">Rendering…</p>
+      </div>
+    </section>
+    <nav class="dock" aria-label="Controls">
+      <button type="button" data-tab="modes">Modes</button>
+      <button type="button" data-tab="look">Look</button>
+      <button type="button" data-tab="audio">Audio</button>
+      <button type="button" data-tab="tune">Tune</button>
+      <button type="button" id="punchBtn" class="punch">Punch</button>
+      <button type="button" id="autoBtn" aria-pressed="true">Auto VJ</button>
+    </nav>
+  </div>
+</div>
+<div class="scrim" aria-hidden="true"></div>
+<div id="vhs" hidden><span>PLAY ▶</span><span id="vhsDate"></span></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="drop" hidden>Drop to play</div>
+<div id="nogl" hidden>This visualizer needs WebGL2. Try a current version of Chrome, Safari, Edge or Firefox.</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const canvas = $('#stage');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false, stencil:false, premultipliedAlpha:false, powerPreference:'high-performance'});
+if (!gl) { $('#nogl').hidden = false; $('#hud').hidden = true; return; }
+const TEST = /[?&]test/.test(location.search);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const floatOK = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+const parallel = gl.getExtension('KHR_parallel_shader_compile');
+const errors = [];
+
+/* ================================================================
+   GLSL
+   ================================================================ */
+const VS = `#version 300 es
+out vec2 vUv;
+void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); vUv = p; gl_Position = vec4(p*2. - 1., 0., 1.); }`;
+
+const PRE = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler3D;
+uniform vec2 uRes;
+uniform float uTime, uZ, uSpeed, uKick, uBass, uMid, uHigh, uHat, uQ, uFov, uCurve;
+uniform vec4 uP;
+uniform vec3 uCamPos;
+uniform mat3 uCamRot;
+uniform vec2 uLook;
+uniform uint uSeed;
+uniform sampler3D uNoise;
+out vec4 fragColor;
+#define PI 3.14159265
+#define TAU 6.28318531
+float n3(vec3 p){ return texture(uNoise, p*.0625).r; }
+vec4 n4(vec3 p){ return texture(uNoise, p*.0625); }
+float n3s(vec3 p){ vec3 x = p*4.; vec3 i = floor(x), f = fract(x); f = f*f*(3. - 2.*f); return texture(uNoise, (i + f + .5)/64.).r; }
+float fbm3s(vec3 p){ return n3s(p)*.6667 + n3s(p*2.03 + vec3(3.1,1.7,5.3))*.3333; }
+float fbm3(vec3 p){ return n3(p)*.5714 + n3(p*2.03 + vec3(3.1,1.7,5.3))*.2857 + n3(p*4.11 + vec3(7.7,2.9,1.3))*.1429; }
+float fbm4(vec3 p){ float s = 0., a = .5333; for(int i = 0; i < 4; i++){ s += a*n3(p); p = p*2.02 + vec3(5.3,1.7,9.1); a *= .5; } return s; }
+mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+float h11(float p){ p = fract(p*.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+vec3 h33(vec3 p3){ p3 = fract(p3*vec3(.1031,.1030,.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yxx)*p3.zyx); }
+uint pcg(uint v){ uint s = v*747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s)*277803737u; return (w >> 22u) ^ w; }
+float smax(float a, float b, float k){ float h = max(k - abs(a - b), 0.)/k; return max(a, b) + h*h*k*.25; }
+vec2 path(float z){ return uCurve*vec2(sin(z*.13)*2.6 + sin(z*.051 + 1.3)*3.4, cos(z*.107)*2.1 + sin(z*.037 + .5)*2.8); }
+mat3 pathCam(float z, out vec3 ro){
+  ro = vec3(path(z), z);
+  vec3 ta = vec3(path(z + 2.5), z + 2.5);
+  vec3 f = normalize(ta - ro);
+  vec2 acc = path(z + 2.) - 2.*path(z) + path(z - 2.);
+  float roll = clamp(acc.x*1.6, -.8, .8) + sin(z*.043)*.3*uCurve;
+  vec3 up = vec3(sin(roll), cos(roll), 0.);
+  vec3 r = normalize(cross(up, f));
+  return mat3(r, cross(f, r), f);
+}
+vec3 camRay(vec2 fc, mat3 M){
+  vec2 uv = (fc - .5*uRes)/min(uRes.x, uRes.y);
+  vec3 rd = normalize(vec3(uv*uFov, 1.));
+  rd.yz *= rot(uLook.y);
+  rd.xz *= rot(-uLook.x);
+  return normalize(M*rd);
+}
+vec4 scene(vec2 fc);
+void main(){
+  vec4 c = scene(gl_FragCoord.xy);
+  vec3 col = c.rgb;
+  if(any(isnan(col)) || any(isinf(col))) col = vec3(0.);
+  fragColor = vec4(clamp(col, 0., 60.), clamp(c.a/40., 0., 1.));
+}
+`;
+
+/* ---------- 1. Contact: volumetric fractal-cloud tunnel ---------- */
+const CONTACT = `
+vec3 cPal(float f, float warm){
+  vec3 c0 = mix(vec3(.04,.05,.18), vec3(.14,.03,.1), warm);
+  vec3 c1 = mix(vec3(.08,.26,1.), vec3(.8,.2,.3), warm);
+  vec3 c2 = mix(vec3(.42,.78,1.), vec3(1.,.6,.25), warm);
+  vec3 c3 = mix(vec3(1.,.93,.78), vec3(1.,.95,.82), warm);
+  vec3 c = mix(c0, c1, smoothstep(0., .35, f));
+  c = mix(c, c2, smoothstep(.3, .7, f));
+  return mix(c, c3, smoothstep(.68, 1., f));
+}
+vec4 scene(vec2 fc){
+  vec3 ro; mat3 M = pathCam(uZ, ro);
+  vec3 rd = camRay(fc, M);
+  float jit = fract(52.9829189*fract(dot(fc, vec2(.06711056, .00583715))));
+  float t = .05 + jit*.12, T = 1., depth = 40.;
+  bool got = false;
+  vec3 col = vec3(0.);
+  int N = int(mix(44., 96., uQ));
+  float twist = uP.x, ribAmt = uP.y, warm = uP.z;
+  for(int i = 0; i < 96; i++){
+    if(i >= N) break;
+    vec3 p = ro + rd*t;
+    vec2 q = p.xy - path(p.z);
+    float r = length(q);
+    float R = 2.15 + .35*sin(p.z*.17) + .22*sin(p.z*.41 + 1.) + uKick*.2 + uBass*.1;
+    float shell = R - r;
+    float dt;
+    if(shell > 1.15){
+      dt = (shell - 1.15)*.75 + .05;
+    } else {
+      float a = atan(q.y, q.x) + p.z*twist + uTime*.25;
+      vec3 sp = vec3(cos(a)*r, sin(a)*r, p.z*.12 - uTime*.08);
+      vec4 w = n4(sp*vec3(.55, .55, .8) + vec3(0., 0., uTime*.05));
+      sp += (w.gba - .5)*vec3(2.4, 2.4, 3.2);
+      float f = fbm4(sp);
+      float rid = 1. - abs(n3(sp*vec3(1.7, 1.7, .6) + 11.)*2. - 1.);
+      rid = pow(rid, 12.);
+      float ribs = .5 + .5*sin(p.z*3.3 + f*8. - uTime*1.4);
+      float wall = smoothstep(1.15, -.1, shell);
+      float d = smoothstep(.46, .78, f + wall*.26 + (ribs - .5)*.2*ribAmt)*wall;
+      d *= d;
+      dt = .045 + t*.011;
+      vec3 e = cPal(clamp(f*1.2 - .32 + wall*.2, 0., 1.), warm)*d*(1.5 + ribAmt*ribs*1.3);
+      e += mix(vec3(1., .86, .6), vec3(.7, .9, 1.), warm)*rid*wall*smoothstep(.42, .62, f)*(2.2 + 5.*uKick + 2.*uHat);
+      col += T*e*dt*1.05;
+      T *= exp(-d*dt*10.);
+      if(!got && T < .5){ depth = t; got = true; }
+    }
+    t += dt;
+    if(T < .015 || t > 40.) break;
+  }
+  vec3 far = vec3(path(uZ + 30.), uZ + 30.);
+  float g = max(dot(rd, normalize(far - ro)), 0.);
+  col += T*(vec3(1., .96, .9)*pow(g, 90.)*6.*(1. + uKick) + mix(vec3(.3, .55, 1.), vec3(1., .5, .25), warm)*pow(g, 14.)*.45);
+  return vec4(col, depth);
+}`;
+
+/* ---------- 2. Deeper: the spiral from the post ---------- */
+const DEEPER = `
+vec4 scene(vec2 fc){
+  vec2 uv = (fc - .5*uRes)/min(uRes.x, uRes.y) + uLook*.3;
+  float T = uTime;
+  vec2 c = vec2(-.04 + .08*sin(T*.21), .02 + .05*cos(T*.29));
+  vec2 d = (uv - c)*rot(.4 + .12*sin(T*.13));
+  d.x *= 1.22;
+  float r = length(d) + 1e-4;
+  float a = atan(d.y, d.x);
+  float z = .55/r;
+  float zz = z + uZ*.5;
+  float sw = a + z*.22*uP.x + T*.3;
+  vec2 cs = vec2(cos(sw), sin(sw));
+  float warp = fbm3(vec3(cs*1.2, zz*.35 + T*.04)) - .5;
+  float u = zz*TAU/.62 + sw + warp*3.4;
+  float band = smoothstep(-.3, .3, sin(u));
+  float wob = n3(vec3(cs*3., zz*1.5));
+  float stri = .5 + .5*sin(u*9. + wob*6.);
+  stri = mix(stri, .5, smoothstep(2.5, 6., z));
+  float grain = n3(vec3(cs*14., zz*6.));
+  float tone = mix(.04, .5, band)*(.3 + .55*stri + .3*grain);
+  tone *= .55 + .45*smoothstep(.04, .5, r);
+  float ribs = .5 + .5*sin(zz*TAU*3.2 + warp*3.);
+  float throat = smoothstep(.13, .045, r);
+  tone = mix(tone, (.2 + .8*ribs)*.7, throat);
+  float fa = z*.32*uP.y + T*.9;
+  float wid = .22 + .08*sin(z*.7);
+  float dA = abs(mod(a - fa + PI, TAU) - PI);
+  float fil = exp(-pow(dA/wid, 2.))*smoothstep(1.4, 3., z)*smoothstep(16., 6., z);
+  fil *= .45 + .9*n3(vec3(zz*2., a*2., T*.5));
+  tone += fil*1.2;
+  tone += exp(-r*22.)*1.2*(1. + uKick);
+  vec2 fp = c + vec2(.48, -.22)*rot(sin(T*.11)*.35);
+  vec2 fd = uv - fp;
+  float fr = length(fd);
+  float rays = pow(abs(sin(atan(fd.y, fd.x)*5. + warp*4.)), 6.);
+  float flare = exp(-fr*6.5)*(2.2 + 2.*uKick + uBass) + rays*exp(-fr*3.5)*.25;
+  tone += flare*uP.z*(.55 + .6*band);
+  tone *= 1. + .45*uKick;
+  return vec4(vec3(tone)*vec3(.93, .97, 1.04), clamp(z*1.6, 0., 40.));
+}`;
+
+/* ---------- lattice maze library (shared with JS walker) ---------- */
+const LAT = `
+uniform float uCell, uTubeR, uNodeR, uCapR;
+float segR(ivec3 n, uint axis){
+  uvec3 u = uvec3(n + 32768);
+  uint h = pcg(u.x*73856093u ^ u.y*19349663u ^ u.z*83492791u ^ axis*2654435761u ^ uSeed) & 255u;
+  return h < 176u ? uTubeR : (h < 216u ? uCapR : -9.);
+}
+float latVoid(vec3 p, bool sq, out float ax){
+  vec3 q = p/uCell;
+  vec3 nr = floor(q + .5);
+  vec3 f = q - nr;
+  ivec3 N = ivec3(nr), F = ivec3(floor(q));
+  float rx = segR(ivec3(F.x, N.y, N.z), 0u);
+  float ry = segR(ivec3(N.x, F.y, N.z), 1u);
+  float rz = segR(ivec3(N.x, N.y, F.z), 2u);
+  vec3 af = abs(f)*uCell;
+  float dx, dy, dz, dn;
+  if(sq){
+    dx = rx - max(af.y, af.z); dy = ry - max(af.x, af.z); dz = rz - max(af.x, af.y);
+    dn = uNodeR - max(af.x, max(af.y, af.z));
+  } else {
+    dx = rx - length(af.yz); dy = ry - length(af.xz); dz = rz - length(af.xy);
+    dn = uNodeR - length(af);
+  }
+  ax = dx > dy ? (dx > dz ? 0. : 2.) : (dy > dz ? 1. : 2.);
+  float k = uCell*.14;
+  return smax(smax(dx, dy, k), smax(dz, dn, k), k);
+}`;
+
+/* ---------- 3. Bloodstream ---------- */
+const BLOOD = `
+float rbc(vec3 p, out float cid){
+  const float S = 1.15;
+  vec3 id = floor(p/S);
+  vec3 h = h33(id + 17.31);
+  cid = h.x;
+  vec3 lc = p - (id + .5)*S;
+  vec3 bnd = .5*S - abs(lc);
+  float toEdge = min(bnd.x, min(bnd.y, bnd.z));
+  if(h.y > .5) return toEdge + .12;
+  vec3 c = (h - .5)*S*.3 + .07*vec3(sin(uTime*.7 + h.z*6.), cos(uTime*.6 + h.x*5.), sin(uTime*.5 + h.y*4.));
+  vec3 wc = (id + .5)*S + c;
+  vec3 v = wc - uCamPos;
+  float dv = length(v);
+  c += v/(dv + 1e-3)*clamp(.8 - dv, 0., .18);
+  vec3 lp = lc - c;
+  float sc = (.75 + .25*h.z)*smoothstep(.15, .55, dv);
+  if(sc < .02) return toEdge + .12;
+  float ang = uTime*(.5 + h.z) + h.x*TAU;
+  lp.xy *= rot(ang); lp.yz *= rot(ang*.73 + h.y*4.);
+  lp /= sc;
+  float rr = length(lp.xz);
+  float tor = length(vec2(rr - .14, lp.y)) - .062;
+  float disc = max(rr - .16, abs(lp.y) - .028);
+  return min(tor, disc)*sc;
+}
+float mapB(vec3 p, out float m, out float cid){
+  float ax;
+  float v = latVoid(p, false, ax);
+  v += (fbm3s(p*1.1 + vec3(0., 0., uTime*.1)) - .5)*.3 + uKick*.07 + uBass*.04;
+  float c = rbc(p, cid);
+  m = c < v ? 1. : 0.;
+  return min(v, c);
+}
+vec3 normB(vec3 p){
+  vec2 e = vec2(.02, -.02); float m, c;
+  return normalize(e.xyy*mapB(p + e.xyy, m, c) + e.yyx*mapB(p + e.yyx, m, c) + e.yxy*mapB(p + e.yxy, m, c) + e.xxx*mapB(p + e.xxx, m, c));
+}
+vec4 scene(vec2 fc){
+  vec3 ro = uCamPos;
+  vec3 rd = camRay(fc, uCamRot);
+  float t = .02, m = 0., cid = 0., d = 0.;
+  int N = int(mix(48., 110., uQ));
+  bool hit = false;
+  for(int i = 0; i < 110; i++){
+    if(i >= N) break;
+    d = mapB(ro + rd*t, m, cid);
+    if(d < .0012*t + .0008){ hit = true; break; }
+    t += d*.8;
+    if(t > 26.) break;
+  }
+  vec3 fogC = vec3(.3, .022, .032)*(.55 + .8*uKick + .3*uBass);
+  vec3 col = fogC;
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec3 n = normB(p);
+    float dif = max(dot(n, -rd), 0.);
+    if(m < .5){
+      float v = fbm3s(p*1.6);
+      float veins = pow(1. - abs(n3(p*2.2 + 3.)*2. - 1.), 16.);
+      float cap = pow(1. - abs(n3(p*6.5 + 9.)*2. - 1.), 20.);
+      vec3 base = mix(vec3(.42, .035, .05), vec3(.95, .32, .28), smoothstep(.3, .75, v));
+      base = mix(base, vec3(.16, .02, .16), veins*.85);
+      base = mix(base, vec3(.55, .05, .1), cap*.6);
+      col = base*(.12 + .95*dif);
+      col += vec3(1., .75, .65)*pow(dif, 28.)*.45*(.5 + n3s(p*9.));
+      col += vec3(1., .18, .1)*pow(v, 3.)*(.25 + 1.5*uKick);
+    } else {
+      vec3 base = mix(vec3(.6, .02, .04), vec3(.92, .1, .08), cid);
+      col = base*(.16 + .9*dif) + vec3(1., .6, .55)*pow(dif, 40.)*.8;
+    }
+    col = mix(col, fogC, 1. - exp(-t*.13));
+  }
+  return vec4(col*1.15, hit ? t : 40.);
+}`;
+
+/* ---------- 4. Nexus: gyroid labyrinths ---------- */
+const NEXUS = `
+float gyr(vec3 p){ return dot(sin(p), cos(p.yzx)); }
+float mapN(vec3 p, out float g, out float tb, out float ch){
+  vec2 q = p.xy - path(p.z);
+  tb = 1.25 + .35*sin(p.z*.19) - length(q);
+  vec3 gp = p*1.3 + vec3(0., 0., uTime*.12);
+  g = gyr(gp);
+  ch = (abs(g) - .62 + .1*uBass)/2.4;
+  return smax(tb, ch, .25);
+}
+vec4 scene(vec2 fc){
+  vec3 ro; mat3 M = pathCam(uZ, ro);
+  vec3 rd = camRay(fc, M);
+  float t = .05, g, tb, ch, d = 1.;
+  bool hit = false;
+  vec3 acc = vec3(0.);
+  int N = int(mix(50., 110., uQ));
+  for(int i = 0; i < 110; i++){
+    if(i >= N) break;
+    vec3 p = ro + rd*t;
+    d = mapN(p, g, tb, ch);
+    if(ch > 0. && tb < 0.) acc += (g > 0. ? vec3(.1, .8, 1.) : vec3(1., .2, .7))*.011*(.4 + 1.6*uKick)*smoothstep(0., .2, ch)*exp(-t*.08);
+    if(d < .001*t + .0008){ hit = true; break; }
+    t += d*.8;
+    if(t > 30.) break;
+  }
+  vec3 col = vec3(.01, .015, .03);
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec2 e = vec2(.005, -.005); float a1, a2, a3;
+    vec3 n = normalize(e.xyy*mapN(p + e.xyy, a1, a2, a3) + e.yyx*mapN(p + e.yyx, a1, a2, a3) + e.yxy*mapN(p + e.yxy, a1, a2, a3) + e.xxx*mapN(p + e.xxx, a1, a2, a3));
+    mapN(p, g, tb, ch);
+    float dif = max(dot(n, -rd), 0.);
+    float fres = pow(1. - dif, 3.);
+    vec3 film = .5 + .5*cos(TAU*(dot(n, rd)*1.3 + g*.3 + uTime*.04 + vec3(0., .33, .67)));
+    float x1 = fract(g*2.2 - uTime*.35);
+    float lnT = smoothstep(.07, 0., min(x1, 1. - x1));
+    float g2 = gyr(p*2.6 + 1.3);
+    float x2 = fract(g2*1.6 + uTime*.25);
+    float lnC = smoothstep(.06, 0., min(x2, 1. - x2));
+    if(tb > ch){
+      col = vec3(.012, .014, .024) + film*fres*.22 + vec3(.05, .06, .09)*pow(dif, 8.);
+      col += vec3(1., .72, .32)*lnT*(.7 + 2.2*uKick + .8*uBass);
+    } else {
+      vec3 cc = g > 0. ? vec3(.1, .75, 1.) : vec3(1., .2, .65);
+      col = cc*(.03 + .18*dif) + film*fres*.15 + cc*lnC*(.9 + 2.*uKick);
+    }
+    col += vec3(1., .85, .6)*exp(-abs(tb - ch)*22.)*(.4 + 1.6*uKick);
+    col = mix(col, vec3(.01, .015, .03), 1. - exp(-t*.07));
+  }
+  col += acc;
+  return vec4(col, hit ? t : 40.);
+}`;
+
+/* ---------- 5. Circuit: square-ducted lattice ---------- */
+const CIRCUIT = `
+vec4 scene(vec2 fc){
+  vec3 ro = uCamPos;
+  vec3 rd = camRay(fc, uCamRot);
+  float t = .02, ax = 0., d = 1., glow = 0.;
+  bool hit = false;
+  int N = int(mix(48., 110., uQ));
+  for(int i = 0; i < 110; i++){
+    if(i >= N) break;
+    d = latVoid(ro + rd*t, true, ax);
+    glow += exp(-d*7.)*.012;
+    if(d < .001*t + .0008){ hit = true; break; }
+    t += d*.85;
+    if(t > 34.) break;
+  }
+  vec3 col = vec3(.005, .008, .02);
+  vec3 cyan = vec3(.15, .85, 1.), mag = vec3(1., .25, .8);
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec2 e = vec2(.004, -.004); float a0;
+    vec3 n = normalize(e.xyy*latVoid(p + e.xyy, true, a0) + e.yyx*latVoid(p + e.yyx, true, a0) + e.yxy*latVoid(p + e.yxy, true, a0) + e.xxx*latVoid(p + e.xxx, true, a0));
+    latVoid(p, true, ax);
+    float dif = max(dot(n, -rd), 0.);
+    vec3 an = abs(n);
+    vec2 wc = an.x > max(an.y, an.z) ? p.yz : (an.y > an.z ? p.xz : p.xy);
+    vec2 gg = abs(fract(wc*1.5) - .5);
+    float line = smoothstep(.43, .485, max(gg.x, gg.y));
+    vec2 cell = floor(wc*1.5);
+    float hp = h11(dot(cell, vec2(17.1, 31.7)) + floor(uTime*7.));
+    float panel = step(.93, hp)*(.3 + uHat);
+    float axc = ax < .5 ? p.x : (ax < 1.5 ? p.y : p.z);
+    vec3 sid = floor(p/uCell + .5);
+    float sh = h11(dot(sid, vec3(7.1, 13.7, 19.3)) + ax*3.1);
+    float pulse = pow(fract(axc*.22 - uTime*1.1*(sh > .5 ? 1. : -1.) + sh*4.), 24.);
+    vec3 lc = sh > .72 ? mag : cyan;
+    vec3 base = vec3(.018, .022, .03) + vec3(.05, .07, .1)*pow(dif, 3.);
+    col = base + lc*line*(.4 + 2.6*uKick + .6*uBass) + mix(lc, vec3(1.), .4)*pulse*line*5. + vec3(1., .85, .55)*panel*.55*(1. - line);
+    col += vec3(.6, .8, 1.)*pow(dif, 60.)*.25;
+    col = mix(col, vec3(.005, .01, .03), 1. - exp(-t*.07));
+  }
+  col += cyan*glow*(.35 + uKick);
+  return vec4(col, hit ? t : 40.);
+}`;
+
+/* ---------- 6. Rings / gates ---------- */
+const RINGS = `
+float ringD(vec3 p, float k){
+  float zc = k*2.2;
+  vec3 c = vec3(path(zc), zc);
+  vec3 tg = normalize(vec3(path(zc + .3) - path(zc - .3), .6));
+  vec3 b1 = normalize(cross(vec3(0., 1., 0.), tg));
+  vec3 b2 = cross(tg, b1);
+  vec3 lp = p - c;
+  float ax = dot(lp, tg);
+  vec2 pl = vec2(dot(lp, b1), dot(lp, b2))*rot(k*uP.y + uTime*.15);
+  float rr = length(pl);
+  if(uP.x > 2.5){
+    float seg = TAU/uP.x;
+    float an = atan(pl.y, pl.x);
+    rr *= cos(mod(an + seg*.5, seg) - seg*.5);
+  }
+  return length(vec2(rr - 1.85, ax)) - .05;
+}
+vec3 ringCol(float k){ return .55 + .45*cos(TAU*(k*.045*uP.z + uTime*.03 + vec3(0., .33, .67))); }
+float ringLight(float k){
+  float kc = uZ/2.2;
+  float wave = kc + 1. + (1. - uKick)*22.;
+  return .45 + .3*uBass + 3.*uKick*exp(-abs(k - wave)*.7) + .8*step(.5, fract(k*.25))*uHat;
+}
+vec4 scene(vec2 fc){
+  vec3 ro; mat3 M = pathCam(uZ, ro);
+  vec3 rd = camRay(fc, M);
+  float t = .1, depth = 40.;
+  vec3 acc = vec3(0.);
+  int N = int(mix(55., 110., uQ));
+  for(int i = 0; i < 110; i++){
+    if(i >= N) break;
+    vec3 p = ro + rd*t;
+    float k0 = floor(p.z/2.2);
+    float d0 = ringD(p, k0), d1 = ringD(p, k0 + 1.);
+    float k = d0 < d1 ? k0 : k0 + 1.;
+    float d = min(d0, d1);
+    float L = ringLight(k);
+    acc += ringCol(k)*L*exp(-d*9.)*.05*exp(-t*.03);
+    if(d < .003){ acc += (ringCol(k)*2.5 + .4)*L*exp(-t*.02); depth = t; break; }
+    t += min(d*.9, .6);
+    if(t > 45.) break;
+  }
+  vec3 far = vec3(path(uZ + 40.), uZ + 40.);
+  float g = max(dot(rd, normalize(far - ro)), 0.);
+  acc += vec3(.6, .7, 1.)*pow(g, 40.)*.8;
+  vec3 sd = floor(rd*140.);
+  acc += step(.996, h11(dot(sd, vec3(1., 57., 113.))))*.45;
+  return vec4(acc, depth);
+}`;
+
+/* ---------- 7. Mercury: liquid chrome ---------- */
+const CHROME = `
+float mapCh(vec3 p){
+  vec2 q = p.xy - path(p.z);
+  float r = length(q), a = atan(q.y, q.x);
+  vec2 cs = vec2(cos(a), sin(a));
+  float R = 1.95 + .25*sin(p.z*.27);
+  float rip = .07*sin(a*4. + p.z*.7 - uTime*1.6) + .04*sin(a*6. - p.z*1.1 + uTime*1.2);
+  rip += (n3s(vec3(cs*.8, p.z*.12 - uTime*.1)) - .5)*.38;
+  float zw = uZ + 3. + (1. - uKick)*14.;
+  rip += .32*uKick*exp(-pow((p.z - zw)*1.1, 2.));
+  return (R + rip - r)*.6;
+}
+vec3 envCh(vec3 d, vec3 axis){
+  float al = dot(d, axis);
+  vec3 side = normalize(d - axis*al + 1e-4);
+  float ang = atan(side.y, side.x);
+  float hz = .8 + .07*sin(ang*3. + uTime*.4) + .03*sin(ang*7. - uTime*.7);
+  vec3 lo = mix(vec3(0., 0., .02), vec3(.1, .03, .2), smoothstep(.2, hz, al));
+  lo += vec3(.3, .8, 1.)*smoothstep(.93, 1., sin(al*70. - uTime*2.))*.5*smoothstep(.3, .7, al);
+  lo += vec3(1., .3, .8)*smoothstep(.97, 1., sin(ang*8.))*smoothstep(.4, .75, al)*.5;
+  vec3 hi = mix(vec3(1., .42, .16), vec3(1., .92, .8), smoothstep(hz, .99, al));
+  vec3 c = mix(lo, hi, smoothstep(hz - .02, hz + .02, al));
+  c += vec3(1.)*pow(max(al, 0.), 400.)*5.;
+  return c;
+}
+vec4 scene(vec2 fc){
+  vec3 ro; mat3 M = pathCam(uZ, ro);
+  vec3 rd = camRay(fc, M);
+  float t = .05;
+  int N = int(mix(50., 100., uQ));
+  for(int i = 0; i < 100; i++){
+    if(i >= N) break;
+    float d = mapCh(ro + rd*t);
+    if(d < .001*t + .001) break;
+    t += d;
+    if(t > 40.) break;
+  }
+  vec3 p = ro + rd*t;
+  vec2 e = vec2(.01, -.01);
+  vec3 n = normalize(e.xyy*mapCh(p + e.xyy) + e.yyx*mapCh(p + e.yyx) + e.yxy*mapCh(p + e.yxy) + e.xxx*mapCh(p + e.xxx));
+  vec3 ax = normalize(vec3(path(p.z + 1.) - path(p.z), 1.));
+  float fres = .45 + .55*pow(1. - max(dot(n, -rd), 0.), 4.);
+  vec3 col = envCh(reflect(rd, n), ax)*fres*vec3(.92, .95, 1.)*(1. + .6*uKick);
+  col = mix(col, vec3(.05, .02, .1), 1. - exp(-t*.05));
+  return vec4(col, min(t, 40.));
+}`;
+
+/* ---------- 8. Fractal cathedral: KIFS corridor ---------- */
+const KALEIDO = `
+float mapK(vec3 p, out float trap){
+  vec3 q = p;
+  q.xy *= rot(q.z*.06);
+  q.z = mod(q.z, 5.) - 2.5;
+  float s = 1.;
+  trap = 1e3;
+  for(int i = 0; i < 6; i++){
+    q = abs(q) - vec3(1.45, .95, 1.25);
+    q.xy *= rot(.61 + uP.x*.1 + uBass*.05);
+    q.xz *= rot(.39 + uTime*.01);
+    q *= 1.38; s *= 1.38;
+    trap = min(trap, dot(q.xy, q.xy));
+  }
+  float fr = (length(max(abs(q) - vec3(.9, .9, .6), 0.)) - .05)/s;
+  float corr = length(p.xy) - 1.15;
+  return max(fr, -corr);
+}
+vec4 scene(vec2 fc){
+  vec3 ro = vec3(0., 0., uZ);
+  float rl = uTime*.07;
+  mat3 M = mat3(cos(rl), sin(rl), 0., -sin(rl), cos(rl), 0., 0., 0., 1.);
+  vec3 rd = camRay(fc, M);
+  float t = .02, trap = 0., d = 1., glow = 0., steps = 0.;
+  bool hit = false;
+  int N = int(mix(60., 120., uQ));
+  for(int i = 0; i < 120; i++){
+    if(i >= N) break;
+    d = mapK(ro + rd*t, trap);
+    glow += exp(-d*40.)*.01;
+    if(d < .0007*t){ hit = true; break; }
+    t += d*.9; steps += 1.;
+    if(t > 30.) break;
+  }
+  vec3 col = vec3(.015, .01, .03);
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec2 e = vec2(.002, -.002); float tt;
+    vec3 n = normalize(e.xyy*mapK(p + e.xyy, tt) + e.yyx*mapK(p + e.yyx, tt) + e.yxy*mapK(p + e.yxy, tt) + e.xxx*mapK(p + e.xxx, tt));
+    float ao = 1. - steps/float(N);
+    vec3 base = .5 + .5*cos(TAU*(log(trap + 1.)*.3 + uP.y + vec3(0., .25, .5)));
+    float dif = max(dot(n, -rd), 0.);
+    col = base*(.08 + .9*dif)*ao*ao;
+    col += pow(dif, 30.)*.5;
+    col += base*smoothstep(.6, 0., trap)*(1. + 3.*uKick);
+    col = mix(col, vec3(.015, .01, .03), 1. - exp(-t*.08));
+  }
+  col += glow*vec3(.5, .7, 1.)*(1. + uKick);
+  return vec4(col, hit ? t : 40.);
+}`;
+
+/* ---------- 9. Stargate '68: slit-scan planes ---------- */
+const STARGATE = `
+vec4 scene(vec2 fc){
+  vec2 uv = (fc - .5*uRes)/min(uRes.x, uRes.y) + uLook*.3;
+  uv *= rot(uP.x*PI*.5 + sin(uTime*.1)*.05);
+  vec3 rd = normalize(vec3(uv, 1.15));
+  float side = rd.y > 0. ? 1. : -1.;
+  float t = min(.55/max(abs(rd.y), 1e-4), 90.);
+  vec3 p = rd*t;
+  float z = p.z + uZ*1.6;
+  float x = p.x + side*3.7;
+  float s1 = fbm3(vec3(x*2.2, z*.025, side*5. + uTime*.05));
+  float s2 = n3(vec3(x*9., z*.012, 3. + side));
+  float bars = smoothstep(.45, .55, fract(x*1.6 + s1*2.));
+  float hue = s1*1.6 + z*.004 + uTime*.03 + side*.2;
+  vec3 c = .55 + .45*cos(TAU*(hue + vec3(0., .33, .67)));
+  c = pow(c, vec3(1.8))*1.6;
+  float lum = (.04 + bars*.8)*(.15 + s2*1.3) + pow(s2, 6.)*3.;
+  vec3 col = c*lum*(1. + .6*uKick);
+  col *= exp(-t*.03)*.75 + .02;
+  col += (exp(-abs(uv.y)*40.)*1.3 + exp(-abs(uv.y)*9.)*.12)*vec3(1., .85, .7)*(.6 + uKick*1.2);
+  return vec4(col, min(t, 40.));
+}`;
+
+/* ---------- 10. Hyperspace: star streaks ---------- */
+const HYPER = `
+vec4 scene(vec2 fc){
+  vec2 uv = (fc - .5*uRes)/min(uRes.x, uRes.y) + uLook*.25;
+  float r = length(uv) + 1e-4, a = atan(uv.y, uv.x);
+  vec3 col = vec3(.015, .03, .1)*(1. + uBass)*(1.2 - min(r, 1.)*.6);
+  col += vec3(.25, .45, 1.)*exp(-r*3.5)*(.8 + uKick*1.5);
+  col += vec3(1.)*exp(-r*18.)*.8;
+  float len = .04 + uSpeed*.04 + uKick*.25;
+  for(int L = 0; L < 7; L++){
+    float fl = float(L);
+    float cells = 70. + fl*23.;
+    float ac = (a/TAU + .5)*cells + fl*.37;
+    float ai = floor(ac);
+    float h = h11(ai + fl*91.7);
+    float w = abs(fract(ac) - .5 - (h - .5)*.5);
+    float laneM = smoothstep(.09, 0., w);
+    float R = .5 + fl*.3;
+    float z = R/r;
+    float zz = z*.5 + uZ*.35 + h*31.;
+    float h2 = h11(floor(zz)*7.13 + ai*.71 + fl*3.3);
+    float sp = fract(zz);
+    float st = smoothstep(len, 0., sp)*step(h2, .35);
+    float fade = smoothstep(14., 1., z)*smoothstep(.04, .2, r);
+    vec3 sc = mix(vec3(.7, .85, 1.), vec3(1., .75, .55), step(.3, h2*h));
+    col += sc*st*laneM*fade*(1.6 + uHat);
+  }
+  return vec4(col, clamp(2./r, 0., 40.));
+}`;
+
+/* ---------- 11. Lawnmower '92: double wireframe shell ---------- */
+const WIRE = `
+vec4 scene(vec2 fc){
+  vec3 ro; mat3 M = pathCam(uZ, ro);
+  vec3 rd = camRay(fc, M);
+  vec3 col = vec3(0.);
+  float depth = 40., t = .05;
+  for(int s = 0; s < 2; s++){
+    float R = s == 0 ? 1.8 : 3.6;
+    for(int i = 0; i < 48; i++){
+      vec3 p = ro + rd*t;
+      float g = R - length(p.xy - path(p.z));
+      if(g < .004) break;
+      t += max(g*.85, .01);
+      if(t > 60.) break;
+    }
+    vec3 p = ro + rd*t;
+    vec2 q = p.xy - path(p.z);
+    float a = atan(q.y, q.x) + (s == 0 ? uTime*.1 : -uTime*.06);
+    float Nn = s == 0 ? 16. : 24.;
+    float ga = abs(fract(a/TAU*Nn) - .5);
+    float gz = abs(fract(p.z*(s == 0 ? .8 : .5)) - .5);
+    float wA = .03 + t*.004, wZ = .03 + t*.006;
+    float line = max(smoothstep(.5 - wA, .5, ga), smoothstep(.5 - wZ, .5, gz));
+    float fade = exp(-t*(s == 0 ? .05 : .035));
+    vec3 lc = s == 0 ? vec3(1., .2, .75) : vec3(.15, .9, 1.);
+    float run = 1. + 3.*uKick*exp(-abs(fract(p.z*.04 - uTime*.6) - .5)*12.);
+    col += lc*line*fade*(1.1 + 1.6*uKick)*run*(s == 0 ? 1. : .7);
+    if(s == 0 && line > .5) depth = t;
+    if(s == 0) t += .03;
+  }
+  vec3 far = vec3(path(uZ + 40.), uZ + 40.);
+  float g = max(dot(rd, normalize(far - ro)), 0.);
+  col += vec3(1., .5, .9)*pow(g, 30.)*1.5;
+  return vec4(col, depth);
+}`;
+
+/* ---------- 12. Demoscene '93 / XOR '91: classic 2D tunnel ---------- */
+const DEMO = `
+vec4 scene(vec2 fc){
+  float ps = max(1., floor(min(uRes.x, uRes.y)/200.));
+  vec2 f = (floor(fc/ps) + .5)*ps;
+  vec2 uv = (f - .5*uRes)/min(uRes.x, uRes.y);
+  vec2 c = vec2(sin(uTime*.8)*.2, cos(uTime*.61)*.13)*(.6 + .6*uBass) + uLook*.2;
+  vec2 d = uv - c;
+  float r = length(d) + 1e-3;
+  float a = atan(d.y, d.x);
+  float z = .3/r;
+  float zz = z + uZ;
+  float an = a/TAU + uTime*.03 + sin(zz*.3)*.05;
+  vec3 col;
+  if(uP.y > .5){
+    ivec2 ti = ivec2(mod(floor(vec2(an*256., zz*128.)), 256.));
+    float x = float((ti.x ^ ti.y) & 255)/255.;
+    col = .5 + .5*cos(TAU*(x*1.3 + vec3(.55, .7, .85) + uTime*.04 + uKick*.1));
+    col *= .15 + .85*x*x;
+  } else {
+    vec3 cyl = vec3(cos(an*TAU)*2.2, sin(an*TAU)*2.2, zz*1.6);
+    float pl = fbm3(cyl)*2. + sin(zz*.8 + an*TAU*2.)*.2;
+    float idx = floor((pl + uTime*.12 + uKick*.2)*24.)/24.;
+    col = .5 + .5*cos(TAU*(idx + vec3(0., .33, .67)));
+    col = pow(col, vec3(1.4));
+  }
+  col *= clamp(r*2.6, 0., 1.)*(1.1 + .6*uKick);
+  col = floor(col*7.)/7.;
+  return vec4(col*1.05, clamp(z*2.4, 0., 40.));
+}`;
+
+/* ---------- post: membrane, zoom blur, chroma, trails ---------- */
+const FX = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+uniform sampler2D uScene, uPrev;
+uniform sampler3D uNoise;
+uniform vec2 uRes;
+uniform float uTime, uFov, uMemD, uMemA, uMemStyle, uShock, uTrail, uBlur, uCA, uKick, uSpin;
+in vec2 vUv;
+out vec4 o;
+float mh(vec2 x){
+  float r = length(x);
+  float h = sin(r*2.6 - uTime*3.5)*.5/(1. + r*.35);
+  h += .3*sin(dot(x, vec2(1.3, .7)) + uTime*1.1) + .3*sin(dot(x, vec2(-.6, 1.5)) - uTime*1.6);
+  h += (texture(uNoise, vec3(x*.11, uTime*.03)).r - .5)*1.;
+  h += uKick*.6*sin(r*6. - uTime*12.)*exp(-r*.25);
+  return h;
+}
+void main(){
+  vec2 uv = vUv;
+  float sc = min(uRes.x, uRes.y);
+  vec2 p = (gl_FragCoord.xy - .5*uRes)/sc;
+  float asp = uRes.x/uRes.y;
+  if(uShock > 0. && uShock < 1.){
+    float rr = length(p), fr = uShock*1.3;
+    float w = exp(-pow((rr - fr)*7., 2.))*(1. - uShock);
+    uv -= p/(rr + 1e-4)*w*.06*sc/uRes;
+  }
+  vec2 dir = uv - .5;
+  vec3 c = vec3(0.);
+  float ca = uCA*.01 + uShock*(1. - uShock)*.04;
+  for(int i = 0; i < 6; i++){
+    float k = float(i)/5.;
+    vec2 su = .5 + dir*(1. - uBlur*k*.03);
+    vec2 o2 = dir*ca;
+    c.r += texture(uScene, su + o2).r;
+    c.g += texture(uScene, su).g;
+    c.b += texture(uScene, su - o2).b;
+  }
+  c /= 6.;
+  float sd = texture(uScene, uv).a*40.;
+  if(uMemA > .001){
+    vec3 rd = normalize(vec3(p*uFov, 1.));
+    vec2 hp = p*uFov*uMemD;
+    float h0 = mh(hp);
+    float e = .25 + uMemD*.02;
+    vec3 n = normalize(vec3(-(mh(hp + vec2(e, 0.)) - h0)/e*.15, -(mh(hp + vec2(0., e)) - h0)/e*.15, -1.));
+    float t = max(uMemD - h0*.25, 0.)/rd.z;
+    float vis = smoothstep(sd + .25, sd - .25, t);
+    float fres = pow(1. - abs(dot(rd, n)), 4.);
+    vec3 behind = texture(uScene, uv + n.xy*.05).rgb;
+    vec3 mc;
+    if(uMemStyle < .5){
+      float w1 = texture(uNoise, vec3(hp*.08, uTime*.02)).r;
+      float w2 = texture(uNoise, vec3(hp*.19 + w1*.8, uTime*.03 + .5)).g;
+      float web = pow(1. - abs(w2*2. - 1.), 10.);
+      mc = behind*vec3(.45, .65, 1.)*.6 + vec3(.6, .82, 1.)*web*1.15 + vec3(1., .94, .82)*fres*1.3 + vec3(.03, .06, .16);
+    } else if(uMemStyle < 1.5){
+      vec3 refl = texture(uScene, vec2(1.) - uv + n.xy*.12).rgb;
+      mc = mix(behind*.3, refl*vec3(1., .96, .9)*1.05 + vec3(.04, .05, .07), .5 + .4*fres) + fres*vec3(.6);
+    } else {
+      vec2 gp = hp*1.6 + n.xy*2.;
+      vec2 gg = abs(fract(gp) - .5);
+      float ln = smoothstep(.45, .5, max(gg.x, gg.y));
+      mc = behind*.9 + vec3(.25, 1., .85)*ln*1.8 + vec3(.2, .5, 1.)*fres;
+    }
+    float near = smoothstep(16., 0., uMemD);
+    c = mix(c, mc, vis*uMemA*(.7 + .3*near));
+    float rim = exp(-abs(sd - t)*3.)*uMemA;
+    c += vec3(1., .88, .7)*rim*(.8 + 1.2*near);
+  }
+  vec2 dd = (uv - .5)*vec2(asp, 1.);
+  dd = dd*(1. - .015*uBlur);
+  float cs = cos(uSpin), sn = sin(uSpin);
+  dd = vec2(cs*dd.x - sn*dd.y, sn*dd.x + cs*dd.y);
+  vec3 prev = texture(uPrev, .5 + dd/vec2(asp, 1.)).rgb;
+  c = max(c, prev*uTrail);
+  o = vec4(c, sd/40.);
+}`;
+
+const BRIGHT = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uTh;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec3 c = (texture(uSrc, vUv + uTexel*vec2(-.5, -.5)).rgb + texture(uSrc, vUv + uTexel*vec2(.5, -.5)).rgb
+          + texture(uSrc, vUv + uTexel*vec2(-.5, .5)).rgb + texture(uSrc, vUv + uTexel*vec2(.5, .5)).rgb)*.25;
+  float l = max(c.r, max(c.g, c.b));
+  c *= max(l - uTh, 0.)/max(l, 1e-4);
+  o = vec4(c, 1.);
+}`;
+const DOWN = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec2 h = uTexel;
+  vec3 s = texture(uSrc, vUv).rgb*4. + texture(uSrc, vUv - h).rgb + texture(uSrc, vUv + h).rgb
+         + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb + texture(uSrc, vUv - vec2(h.x, -h.y)).rgb;
+  o = vec4(s/8., 1.);
+}`;
+const UP = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main(){
+  vec2 h = uTexel;
+  vec3 s = texture(uSrc, vUv + vec2(-h.x*2., 0.)).rgb + texture(uSrc, vUv + vec2(-h.x, h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(0., h.y*2.)).rgb + texture(uSrc, vUv + vec2(h.x, h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(h.x*2., 0.)).rgb + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb*2.
+         + texture(uSrc, vUv + vec2(0., -h.y*2.)).rgb + texture(uSrc, vUv + vec2(-h.x, -h.y)).rgb*2.;
+  o = vec4(s/12., 1.);
+}`;
+
+/* ---------- final: tone map + looks ---------- */
+const FINAL = `#version 300 es
+precision highp float;
+uniform sampler2D uFx, uBloom, uBlue;
+uniform vec2 uRes;
+uniform float uTime, uKick, uFlash, uBloomAmt, uExposure;
+uniform int uLook;
+in vec2 vUv; out vec4 o;
+#define TAU 6.28318531
+float hh(float p){ p = fract(p*.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+vec3 aces(vec3 x){ return clamp((x*(2.51*x + .03))/(x*(2.43*x + .59) + .14), 0., 1.); }
+vec3 hueRot(vec3 c, float a){ const vec3 k = vec3(.57735); float ca = cos(a); return c*ca + cross(k, c)*sin(a) + k*dot(k, c)*(1. - ca); }
+vec3 ramp(float x){
+  x = clamp(x, 0., 1.)*4.;
+  vec3 a = vec3(0.), b = vec3(.22, .02, .45), c = vec3(.85, .1, .45), d = vec3(1., .55, .05), e = vec3(1., 1., .85);
+  return x < 1. ? mix(a, b, x) : x < 2. ? mix(b, c, x - 1.) : x < 3. ? mix(c, d, x - 2.) : mix(d, e, x - 3.);
+}
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  float px = 1.;
+  if(uLook == 2 || uLook == 3) px = max(2., floor(min(uRes.x, uRes.y)/380.));
+  vec2 fq = (floor(fc/px) + .5)*px;
+  vec2 uv = fq/uRes;
+  if(uLook == 4){
+    float ln = floor(fc.y/2.);
+    uv.x += sin(ln*.07 + uTime*3.)*.0012 + (hh(ln + floor(uTime*30.)) - .5)*.004*step(.93, hh(floor(uTime*5.)));
+  }
+  vec3 c = texture(uFx, uv).rgb;
+  vec3 b = texture(uBloom, uv).rgb;
+  if(uLook == 1) b *= vec3(1.2, .85, .68);
+  c += b*uBloomAmt;
+  if(uLook == 4){
+    c.r = mix(c.r, texture(uFx, uv + vec2(.005, 0.)).r, .65);
+    c.b = mix(c.b, texture(uFx, uv - vec2(.005, 0.)).b, .65);
+  }
+  c *= uExposure;
+  c += uFlash*uFlash*vec3(2.8, 2.9, 3.);
+  vec3 m = aces(c);
+  float L = dot(m, vec3(.299, .587, .114));
+  float dn = texture(uBlue, floor(fc/px)/64.).r;
+  vec2 q = uv - .5;
+  float vig = 1. - dot(q, q)*.9;
+  if(uLook == 0){
+    m *= vig;
+  } else if(uLook == 1){
+    m = mix(vec3(L), m, 1.12);
+    m = m*vec3(1.04, 1., .93) + vec3(0., .014, .03)*(1. - L);
+    m = smoothstep(-.02, 1.02, m);
+    float gr = texture(uBlue, (fc + vec2(floor(uTime*24.)*17., floor(uTime*24.)*29.))/64.).r - .5;
+    m += gr*.075*(1. - L*.6);
+    m *= vig;
+  } else if(uLook == 2){
+    float l = smoothstep(.015, .93, pow(L, .92))*mix(1., vig, .6);
+    l = floor(l*7. + dn)/7.;
+    m = vec3(l)*vec3(.97, .98, 1.);
+  } else if(uLook == 3){
+    float l = smoothstep(.03, .88, L)*mix(1., vig, .5);
+    m = mix(vec3(.03, .03, .05), vec3(.93, .94, .9), step(dn, l));
+  } else if(uLook == 4){
+    m = mix(vec3(L), m, .8)*vec3(1.02, .97, 1.08) + .03;
+    m *= .82 + .18*step(.5, fract(fc.y/3.));
+    m += (hh(fc.x*.37 + fc.y*1.31 + floor(uTime*60.)) - .5)*.07;
+    float band = fract(uTime*.07);
+    m += step(abs(uv.y - 1. + band*1.2), .015)*.12;
+    m *= vig;
+  } else if(uLook == 5){
+    m = ramp(pow(L, .85)*1.05)*vig;
+  } else if(uLook == 6){
+    vec3 s = hueRot(m, uTime*.7 + uKick*1.6);
+    s = mix(vec3(dot(s, vec3(.299, .587, .114))), s, 1.8);
+    s = floor(clamp(s, 0., 1.)*5. + dn)/5.;
+    m = s*vig;
+  }
+  m += (dn - .5)/255.;
+  o = vec4(m, 1.);
+}`;
+
+/* ================================================================
+   GL plumbing
+   ================================================================ */
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+let vsObj = null;
+function numbered(src){ return src.split('\n').map((l, i) => String(i + 1).padStart(4) + ' ' + l).join('\n'); }
+function makeProgram(fsrc, name){
+  if (!vsObj){ vsObj = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vsObj, VS); gl.compileShader(vsObj); }
+  const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsrc); gl.compileShader(fs);
+  const p = gl.createProgram(); gl.attachShader(p, vsObj); gl.attachShader(p, fs); gl.linkProgram(p);
+  return {p, fs, name, src:fsrc, loc:{}, ready:false, failed:false};
+}
+function ready(P){
+  if (P.ready) return true;
+  if (P.failed) return false;
+  if (parallel && !gl.getProgramParameter(P.p, parallel.COMPLETION_STATUS_KHR)) return false;
+  if (!gl.getProgramParameter(P.p, gl.LINK_STATUS)){
+    P.failed = true;
+    const log = gl.getShaderInfoLog(P.fs) || gl.getProgramInfoLog(P.p);
+    errors.push(P.name + ': ' + log);
+    console.error('Shader ' + P.name + ' failed:\n' + log + '\n' + numbered(P.src));
+    return false;
+  }
+  P.ready = true; return true;
+}
+const U = (P, n) => { let l = P.loc[n]; if (l === undefined) l = P.loc[n] = gl.getUniformLocation(P.p, n); return l; };
+const f1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1f(l, a); };
+const f2 = (P, n, a, b) => { const l = U(P, n); if (l) gl.uniform2f(l, a, b); };
+const f3 = (P, n, a, b, c) => { const l = U(P, n); if (l) gl.uniform3f(l, a, b, c); };
+const f4 = (P, n, v) => { const l = U(P, n); if (l) gl.uniform4f(l, v[0], v[1], v[2], v[3]); };
+const i1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1i(l, a); };
+const u1 = (P, n, a) => { const l = U(P, n); if (l) gl.uniform1ui(l, a >>> 0); };
+const m3 = (P, n, m) => { const l = U(P, n); if (l) gl.uniformMatrix3fv(l, false, m); };
+
+const SCENE_SRC = {
+  contact: PRE + CONTACT, deeper: PRE + DEEPER, blood: PRE + LAT + BLOOD, nexus: PRE + NEXUS,
+  circuit: PRE + LAT + CIRCUIT, rings: PRE + RINGS, chrome: PRE + CHROME, kaleido: PRE + KALEIDO,
+  stargate: PRE + STARGATE, hyper: PRE + HYPER, wire: PRE + WIRE, demo: PRE + DEMO,
+};
+const progs = {};
+function getProg(key){ if (!progs[key]) progs[key] = makeProgram(SCENE_SRC[key], key); return progs[key]; }
+const fxP = makeProgram(FX, 'fx'), brightP = makeProgram(BRIGHT, 'bright'), downP = makeProgram(DOWN, 'down'), upP = makeProgram(UP, 'up'), finalP = makeProgram(FINAL, 'final');
+
+/* ---------- textures ---------- */
+function makeNoise3D(){
+  const S = 64, P = 16, C = S/P, data = new Uint8Array(S*S*S*4);
+  let seed = 1337;
+  const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0)/4294967296;
+  const i0 = new Int32Array(S), fr = new Float32Array(S), fd = new Float32Array(S);
+  for (let x = 0; x < S; x++){ const v = x/C; i0[x] = Math.floor(v); fr[x] = v - i0[x]; const t = fr[x]; fd[x] = t*t*t*(t*(t*6 - 15) + 10); }
+  const G = new Float32Array(P*P*P*3);
+  for (let ch = 0; ch < 4; ch++){
+    for (let i = 0; i < P*P*P; i++){
+      let x, y, z, l;
+      do { x = rnd()*2 - 1; y = rnd()*2 - 1; z = rnd()*2 - 1; l = x*x + y*y + z*z; } while (l > 1 || l < 1e-4);
+      l = Math.sqrt(l); G[i*3] = x/l; G[i*3 + 1] = y/l; G[i*3 + 2] = z/l;
+    }
+    for (let z = 0; z < S; z++){
+      const z0 = i0[z] % P, z1 = (i0[z] + 1) % P, fz = fr[z], wz = fd[z];
+      for (let y = 0; y < S; y++){
+        const y0 = i0[y] % P, y1 = (i0[y] + 1) % P, fy = fr[y], wy = fd[y];
+        for (let x = 0; x < S; x++){
+          const x0 = i0[x] % P, x1 = (i0[x] + 1) % P, fx = fr[x], wx = fd[x];
+          let k;
+          k = ((z0*P + y0)*P + x0)*3; const n000 = G[k]*fx + G[k + 1]*fy + G[k + 2]*fz;
+          k = ((z0*P + y0)*P + x1)*3; const n100 = G[k]*(fx - 1) + G[k + 1]*fy + G[k + 2]*fz;
+          k = ((z0*P + y1)*P + x0)*3; const n010 = G[k]*fx + G[k + 1]*(fy - 1) + G[k + 2]*fz;
+          k = ((z0*P + y1)*P + x1)*3; const n110 = G[k]*(fx - 1) + G[k + 1]*(fy - 1) + G[k + 2]*fz;
+          k = ((z1*P + y0)*P + x0)*3; const n001 = G[k]*fx + G[k + 1]*fy + G[k + 2]*(fz - 1);
+          k = ((z1*P + y0)*P + x1)*3; const n101 = G[k]*(fx - 1) + G[k + 1]*fy + G[k + 2]*(fz - 1);
+          k = ((z1*P + y1)*P + x0)*3; const n011 = G[k]*fx + G[k + 1]*(fy - 1) + G[k + 2]*(fz - 1);
+          k = ((z1*P + y1)*P + x1)*3; const n111 = G[k]*(fx - 1) + G[k + 1]*(fy - 1) + G[k + 2]*(fz - 1);
+          const a = n000 + (n100 - n000)*wx, b = n010 + (n110 - n010)*wx, c = n001 + (n101 - n001)*wx, d = n011 + (n111 - n011)*wx;
+          const e = a + (b - a)*wy, f = c + (d - c)*wy;
+          const n = e + (f - e)*wz;
+          data[((z*S + y)*S + x)*4 + ch] = Math.max(0, Math.min(255, Math.round((.5 + n*.9)*255)));
+        }
+      }
+    }
+  }
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, tex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, S, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
+  return tex;
+}
+function makeBlue(){
+  const N = 64, A = N*N;
+  let s = 99; const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0)/4294967296;
+  const a = new Float32Array(A), tmp = new Float32Array(A), blur = new Float32Array(A);
+  for (let i = 0; i < A; i++) a[i] = rnd();
+  const k = [.0702, .1311, .1907, .2161, .1907, .1311, .0702];
+  const idx = Array.from({length:A}, (_, i) => i);
+  for (let it = 0; it < 8; it++){
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){ let v = 0; for (let j = -3; j <= 3; j++) v += k[j + 3]*a[y*N + ((x + j + N) % N)]; tmp[y*N + x] = v; }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){ let v = 0; for (let j = -3; j <= 3; j++) v += k[j + 3]*tmp[((y + j + N) % N)*N + x]; blur[y*N + x] = v; }
+    for (let i = 0; i < A; i++) a[i] -= blur[i];
+    idx.sort((p, q) => a[p] - a[q]);
+    for (let r = 0; r < A; r++) a[idx[r]] = (r + .5)/A;
+  }
+  const d = new Uint8Array(A); for (let i = 0; i < A; i++) d[i] = Math.floor(a[i]*256);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, N, N, 0, gl.RED, gl.UNSIGNED_BYTE, d);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  return tex;
+}
+const noiseTex = makeNoise3D();
+const blueTex = makeBlue();
+
+/* ---------- render targets ---------- */
+function makeRT(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (floatOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  return {tex, fb, w, h};
+}
+function freeRT(r){ if (r){ gl.deleteTexture(r.tex); gl.deleteFramebuffer(r.fb); } }
+let RT = null, iw = 0, ih = 0;
+function ensureTargets(w, h){
+  if (RT && RT.w === w && RT.h === h) return;
+  if (RT){ freeRT(RT.scene); RT.fx.forEach(freeRT); RT.bloom.forEach(freeRT); }
+  const bloom = []; let bw = w, bh = h;
+  for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); bloom.push(makeRT(bw, bh)); }
+  RT = {w, h, scene:makeRT(w, h), fx:[makeRT(w, h), makeRT(w, h)], bloom, ping:0};
+}
+function tex2(unit, t){ gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
+function tex3(unit, t){ gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_3D, t); }
+function target(r){ gl.bindFramebuffer(gl.FRAMEBUFFER, r ? r.fb : null); gl.viewport(0, 0, r ? r.w : canvas.width, r ? r.h : canvas.height); }
+
+/* ================================================================
+   Lattice walker: a random walk on the same grid the shaders carve
+   ================================================================ */
+function pcgJS(v){
+  const s = (Math.imul(v >>> 0, 747796405) + 2891336453) >>> 0;
+  const w = Math.imul(((s >>> ((s >>> 28) + 4)) ^ s) >>> 0, 277803737) >>> 0;
+  return ((w >>> 22) ^ w) >>> 0;
+}
+function segOpen(x, y, z, axis, seed){
+  const v = (Math.imul(x + 32768, 73856093) ^ Math.imul(y + 32768, 19349663) ^ Math.imul(z + 32768, 83492791) ^ Math.imul(axis, 2654435761) ^ seed) >>> 0;
+  return (pcgJS(v) & 255) < 176;
+}
+const DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+class Walker {
+  constructor(seed){
+    this.seed = seed >>> 0; this.r = (seed ^ 0x9e3779b9) >>> 0 || 1;
+    this.nodes = [[0,0,0]]; this.dirs = []; this.breach = new Set();
+    this.step(); this.step();
+    this.s = 1; this.up = [0,1,0]; this.f = null;
+  }
+  rand(){ this.r = (Math.imul(this.r, 1664525) + 1013904223) >>> 0; return this.r/4294967296; }
+  open(n, d){ const ax = d >> 1, neg = d & 1; return segOpen(n[0] - (neg && ax === 0 ? 1 : 0), n[1] - (neg && ax === 1 ? 1 : 0), n[2] - (neg && ax === 2 ? 1 : 0), ax, this.seed); }
+  step(){
+    const n = this.nodes[this.nodes.length - 1];
+    const prev = this.dirs.length ? this.dirs[this.dirs.length - 1] : -1;
+    const rev = prev < 0 ? -1 : prev ^ 1;
+    const recent = new Set(this.nodes.slice(-10).map(k => k.join(',')));
+    const cands = [];
+    for (let d = 0; d < 6; d++){
+      if (d === rev || !this.open(n, d)) continue;
+      const m = [n[0] + DIRS[d][0], n[1] + DIRS[d][1], n[2] + DIRS[d][2]];
+      let w = d === prev ? 1.25 : 1;
+      if (recent.has(m.join(','))) w *= .04;
+      cands.push([d, w]);
+    }
+    let d;
+    if (!cands.length){
+      const opts = [0,1,2,3,4,5].filter(x => x !== rev);
+      d = opts[Math.floor(this.rand()*opts.length)];
+      this.breach.add(this.nodes.length - 1);
+    } else {
+      let x = this.rand()*cands.reduce((a, c) => a + c[1], 0);
+      for (const c of cands){ x -= c[1]; if (x <= 0){ d = c[0]; break; } }
+      if (d === undefined) d = cands[cands.length - 1][0];
+    }
+    this.dirs.push(d);
+    this.nodes.push([n[0] + DIRS[d][0], n[1] + DIRS[d][1], n[2] + DIRS[d][2]]);
+  }
+  pos(s, S){
+    const k = Math.floor(s + .5), u = s + .5 - k;
+    while (this.nodes.length < k + 3) this.step();
+    const A = this.nodes[k - 1], N = this.nodes[k], B = this.nodes[k + 1], o = [0,0,0];
+    for (let i = 0; i < 3; i++){ const m0 = (A[i] + N[i])/2, m1 = (N[i] + B[i])/2; o[i] = ((1 - u)*(1 - u)*m0 + 2*u*(1 - u)*N[i] + u*u*m1)*S; }
+    return o;
+  }
+  frame(S, dt){
+    const p = this.pos(this.s, S), a = this.pos(this.s + .35, S);
+    let f = norm(sub(a, p));
+    this.f = this.f ? norm(lerp3(this.f, f, 1 - Math.exp(-dt*10))) : f;
+    f = this.f;
+    let up = sub(this.up, scl(f, dot(this.up, f)));
+    if (len(up) < .05) up = Math.abs(f[1]) < .9 ? [0,1,0] : [1,0,0];
+    up = norm(up); this.up = up;
+    const r = norm(cross(up, f)), u = cross(f, r);
+    return {p, m:[r[0], r[1], r[2], u[0], u[1], u[2], f[0], f[1], f[2]]};
+  }
+  nearBreach(){ const k = Math.floor(this.s + .5); return this.breach.has(k) || this.breach.has(k + 1); }
+}
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scl = (a, s) => [a[0]*s, a[1]*s, a[2]*s];
+const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const len = a => Math.hypot(a[0], a[1], a[2]);
+const norm = a => { const l = len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+const cross = (a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]];
+const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0])*t, a[1] + (b[1] - a[1])*t, a[2] + (b[2] - a[2])*t];
+
+/* ================================================================
+   Modes and looks
+   ================================================================ */
+const LOOKS = [
+  {id:'clean', name:'Clean', n:0}, {id:'film', name:"Film '97", n:1}, {id:'gif', name:'GIF dither', n:2},
+  {id:'bit', name:'1-bit', n:3}, {id:'vhs', name:'VHS', n:4}, {id:'thermal', name:'Thermal', n:5}, {id:'acid', name:'Acid', n:6},
+];
+const LAT_SOFT = {cell:2, tube:.62, node:.84, cap:.17};
+const LAT_SQ = {cell:2, tube:.6, node:.76, cap:.16};
+const MODES = [
+  {prog:'contact', name:"Contact '97", desc:"Fractal cloud walls streaming past, blue-white with gold lightning. The Weta ride.", look:'film', speed:6.5, fov:1.05, P:[.11,.55,0,0], trail:.25, bloom:.9, exp:1},
+  {prog:'deeper', name:'Deeper', desc:"The spiral from the post: swirling bands, an S-shaped filament, a blown-out flare.", look:'gif', speed:2.2, fov:1, P:[1,1.2,1,0], trail:.45, bloom:.7, exp:1},
+  {prog:'blood', name:'Bloodstream', desc:"A branching vessel maze. It turns at every junction while red cells tumble past.", look:'clean', speed:1.35, fov:1.15, lattice:LAT_SOFT, trail:.2, bloom:.6, exp:1.1},
+  {prog:'nexus', name:'Nexus', desc:"Your tunnel cuts through two interwoven labyrinths, one cyan and one magenta.", look:'clean', speed:3.6, fov:1.1, P:[0,0,0,0], curve:.8, trail:.25, bloom:.9, exp:1.2},
+  {prog:'circuit', name:'Circuit', desc:"Square ducts on a 3D grid. Data pulses run the seams and the kick lights every line.", look:'clean', speed:1.7, fov:1.15, lattice:LAT_SQ, trail:.3, bloom:1, exp:1.1},
+  {prog:'contact', name:'Contact: Amber', desc:"The Contact walls with a hotter palette, heavier ribs and a harder twist.", look:'film', speed:7.5, fov:1.1, P:[.22,1,1,0], trail:.3, bloom:.95, exp:1},
+  {prog:'rings', name:'Neon Gates', desc:"Rings strung along a winding line. Each kick sends a wave of light down it.", look:'clean', speed:8, fov:1.05, P:[0,0,1,0], trail:.5, bloom:1.1, exp:1},
+  {prog:'rings', name:'Hex Gates', desc:"Hexagon gates that turn a few degrees per ring, so the tunnel corkscrews.", look:'clean', speed:8, fov:1.05, P:[6,.13,.4,0], trail:.5, bloom:1.1, exp:1},
+  {prog:'chrome', name:'Mercury', desc:"A liquid chrome pipe reflecting a 90s gradient sky. The kick sends a bulge down it.", look:'clean', speed:5, fov:1.05, trail:.2, bloom:.8, exp:.9},
+  {prog:'kaleido', name:'Fractal Cathedral', desc:"A folded fractal corridor that keeps rebuilding itself around you.", look:'clean', speed:2.6, fov:1.1, P:[0,.1,0,0], trail:.3, bloom:.9, exp:1.2},
+  {prog:'stargate', name:"Stargate '68", desc:"Slit-scan light planes rushing toward the horizon, after 2001: A Space Odyssey.", look:'film', speed:9, fov:1, P:[0,0,0,0], trail:.35, bloom:.9, exp:1},
+  {prog:'hyper', name:'Hyperspace', desc:"Star streaks in a blue tunnel. The low end stretches them.", look:'clean', speed:5, fov:1, trail:.5, bloom:1, exp:1},
+  {prog:'wire', name:"Lawnmower '92", desc:"Two neon wireframe shells, one inside the other, sliding past each other.", look:'vhs', speed:6, fov:1.05, trail:.4, bloom:1.1, exp:1},
+  {prog:'demo', name:"Demoscene '93", desc:"A 320×200 plasma tunnel with palette cycling, straight off a floppy.", look:'clean', speed:1.6, fov:1, P:[0,0,0,0], trail:0, bloom:.5, exp:1},
+  {prog:'demo', name:"XOR '91", desc:"The classic XOR-texture tunnel, wobbling with the bass.", look:'clean', speed:1.6, fov:1, P:[0,1,0,0], trail:0, bloom:.5, exp:1},
+];
+
+/* ================================================================
+   State
+   ================================================================ */
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('whl:' + k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem('whl:' + k, JSON.stringify(v)); } catch(e){} },
+};
+const state = {
+  mode:0, lookSel:store.get('look', 'auto'), speed:store.get('speed', 1), trail:store.get('trail', 1),
+  memEvery:store.get('memEvery', 8), memStyle:store.get('memStyle', 0), autoBars:store.get('autoBars', 16),
+  quality:store.get('quality', 'auto'), auto:true, ghost:store.get('ghost', true), dropPunch:store.get('dropPunch', true), sens:store.get('sens', 1),
+};
+let clock = 0, modeClock = 0, z = 0, walker = null, seed = 1, speedNow = 1;
+let look = [0, 0], lookTarget = [0, 0];
+let renderScale = isTouch ? .55 : .75, uQ = .7;
+const mem = {active:false, t:0, dur:1.6, D:16, A:0, next:null, flash:0, shock:1, boost:0};
+let beatsAuto = 0, beatsMem = 0, autoTimer = 0, autoOrder = [], lastBeatClock = -99;
+
+/* ================================================================
+   Audio
+   ================================================================ */
+const audio = {
+  ctx:null, an:null, buf:null, el:null, node:null, stream:null, kind:'none', fileName:'',
+  env:{kick:0, bass:0, mid:0, high:0, hat:0},
+  bpm:0, kickTimes:[], flux:[], hiFlux:[], prevLow:0, prevHi:0, pk:[1e-4, 1e-4, 1e-4, 1e-4], lastKick:-9, lastHat:-9,
+  ghostPhase:0, shortB:0, longB:0, dropCool:6,
+  ensure(){
+    if (!this.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.an = this.ctx.createAnalyser(); this.an.fftSize = 2048; this.an.smoothingTimeConstant = 0;
+      this.buf = new Float32Array(this.an.frequencyBinCount);
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  stop(){
+    if (this.el){ this.el.pause(); this.el.src = ''; this.el = null; }
+    if (this.node){ try { this.node.disconnect(); } catch(e){} this.node = null; }
+    if (this.stream){ this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    this.kind = 'none'; this.kickTimes = []; this.bpm = 0;
+  },
+  async useFile(file){
+    this.ensure(); this.stop();
+    const el = new Audio(); el.src = URL.createObjectURL(file); el.loop = true; el.preload = 'auto';
+    const node = this.ctx.createMediaElementSource(el);
+    node.connect(this.an); node.connect(this.ctx.destination);
+    this.el = el; this.node = node; this.kind = 'file'; this.fileName = file.name.replace(/\.[^.]+$/, '');
+    await el.play();
+  },
+  async useMic(){
+    this.ensure();
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    this.stop();
+    this.stream = stream; this.node = this.ctx.createMediaStreamSource(stream); this.node.connect(this.an); this.kind = 'mic';
+  },
+  live(){ return this.kind === 'mic' || (this.kind === 'file' && this.el && !this.el.paused); },
+  kick(now, amt){ this.env.kick = Math.max(this.env.kick, amt); onBeat(now); },
+  update(dt, now){
+    const E = this.env;
+    E.kick *= Math.exp(-dt*7); E.hat *= Math.exp(-dt*11);
+    if (!this.live()){
+      if (state.ghost){
+        const bpm = 122, prev = this.ghostPhase;
+        this.ghostPhase += dt*bpm/60;
+        if (this.ghostPhase >= 1){ this.ghostPhase -= 1; this.kick(now, .85); }
+        if (prev < .5 && this.ghostPhase >= .5) E.hat = .7;
+        const ph = this.ghostPhase;
+        E.bass += (.42 + .36*Math.exp(-ph*4) - E.bass)*Math.min(1, dt*20);
+        E.mid = .35 + .15*Math.sin(now*.9);
+        E.high = .25 + .3*E.hat;
+        this.bpm = 122;
+      } else {
+        const k = Math.exp(-dt*3); E.bass *= k; E.mid *= k; E.high *= k; this.bpm = 0;
+      }
+      return;
+    }
+    const buf = this.buf; this.an.getFloatFrequencyData(buf);
+    const hz = this.ctx.sampleRate/this.an.fftSize;
+    const band = (lo, hi) => {
+      const a = Math.max(1, Math.floor(lo/hz)), b = Math.min(buf.length - 1, Math.ceil(hi/hz));
+      let s = 0; for (let i = a; i <= b; i++){ const v = buf[i]; if (v > -150){ const m = Math.pow(10, v/20); s += m*m; } }
+      return Math.sqrt(s/(b - a + 1));
+    };
+    const low = band(35, 130), mid = band(300, 2500), hi = band(5000, 12000), sub = band(25, 70);
+    const vals = [low, mid, hi, sub];
+    for (let i = 0; i < 4; i++) this.pk[i] = Math.max(vals[i], this.pk[i]*Math.exp(-dt/8), 1e-5);
+    const sens = state.sens;
+    const nb = Math.min(1.2, (low/this.pk[0])*sens), nm = Math.min(1.2, (mid/this.pk[1])*sens), nh = Math.min(1.2, (hi/this.pk[2])*sens);
+    const follow = (cur, tgt, att, rel) => cur + (tgt - cur)*(1 - Math.exp(-dt/(tgt > cur ? att : rel)));
+    E.bass = follow(E.bass, nb*nb, .02, .22);
+    E.mid = follow(E.mid, nm, .04, .3);
+    E.high = follow(E.high, nh, .02, .15);
+    const flux = Math.max(0, low - this.prevLow)/this.pk[0]; this.prevLow = low;
+    const hf = Math.max(0, hi - this.prevHi)/this.pk[2]; this.prevHi = hi;
+    const hist = this.flux; hist.push(flux); if (hist.length > 45) hist.shift();
+    const mean = hist.reduce((a, b) => a + b, 0)/hist.length;
+    const sd = Math.sqrt(hist.reduce((a, b) => a + (b - mean)*(b - mean), 0)/hist.length);
+    if (flux > mean + 1.4*sd + .02/sens && flux > .05/sens && now - this.lastKick > .22){
+      this.lastKick = now; this.kick(now, 1);
+      this.kickTimes.push(now); if (this.kickTimes.length > 24) this.kickTimes.shift();
+      const iois = [];
+      for (let i = 1; i < this.kickTimes.length; i++){ const d = this.kickTimes[i] - this.kickTimes[i - 1]; if (d > .27 && d < 1.5) iois.push(d); }
+      if (iois.length >= 4){
+        iois.sort((a, b) => a - b);
+        let bpm = 60/iois[iois.length >> 1];
+        while (bpm < 85) bpm *= 2; while (bpm >= 175) bpm /= 2;
+        this.bpm = this.bpm ? this.bpm + (bpm - this.bpm)*.3 : bpm;
+      }
+    }
+    const hh = this.hiFlux; hh.push(hf); if (hh.length > 30) hh.shift();
+    const hm = hh.reduce((a, b) => a + b, 0)/hh.length;
+    if (hf > hm*2.2 + .04 && now - this.lastHat > .09){ this.lastHat = now; E.hat = 1; }
+    this.shortB += (E.bass - this.shortB)*(1 - Math.exp(-dt/.4));
+    this.longB += (E.bass - this.longB)*(1 - Math.exp(-dt/7));
+    this.dropCool -= dt;
+    if (state.dropPunch && this.dropCool <= 0 && this.shortB > .5 && this.longB < .3 && this.shortB > this.longB*2.2){
+      this.dropCool = 20; punch(null, 'drop');
+    }
+  },
+};
+
+/* ================================================================
+   Membrane punch-through, beats, auto VJ
+   ================================================================ */
+function punch(next = null, why = ''){
+  if (mem.active) { if (next !== null) mem.next = next; return; }
+  mem.active = true; mem.t = 0; mem.next = next;
+  const bpm = audio.bpm || 122;
+  mem.dur = Math.min(2.4, Math.max(1.2, 4*60/bpm));
+  if (next !== null){ const P = getProg(MODES[next].prog); ready(P); }
+}
+function onBeat(now){
+  lastBeatClock = clock;
+  beatsAuto++; beatsMem++;
+  if (state.auto && beatsAuto >= state.autoBars*4){ beatsAuto = 0; autoTimer = 0; punch(nextAutoMode(), 'auto'); }
+  else if (state.memEvery && beatsMem >= state.memEvery*4){ beatsMem = 0; if (!mem.active) punch(null, 'bars'); }
+}
+function nextAutoMode(){
+  if (!autoOrder.length){
+    autoOrder = MODES.map((_, i) => i).filter(i => i !== state.mode);
+    for (let i = autoOrder.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); [autoOrder[i], autoOrder[j]] = [autoOrder[j], autoOrder[i]]; }
+  }
+  return autoOrder.shift();
+}
+function updateMem(dt){
+  mem.flash *= Math.exp(-dt*(reduceMotion ? 14 : 6));
+  if (mem.shock < 1) mem.shock = Math.min(1, mem.shock + dt/.9);
+  mem.boost *= Math.exp(-dt*2.2);
+  if (!mem.active){ mem.A = 0; return; }
+  mem.t += dt;
+  const p = Math.min(1, mem.t/mem.dur);
+  mem.D = 16*Math.pow(1 - p, 1.7);
+  mem.A = Math.min(1, p/.15);
+  mem.boost = Math.max(mem.boost, p*1.2);
+  if (p >= 1){
+    if (mem.next !== null){
+      const P = getProg(MODES[mem.next].prog);
+      if (!ready(P) && !P.failed && mem.t < mem.dur + 3) return;
+    }
+    mem.active = false; mem.A = 0;
+    mem.flash = reduceMotion ? .35 : 1; mem.shock = 0; mem.boost = 1.6;
+    if (mem.next !== null){ setMode(mem.next); mem.next = null; }
+  }
+}
+
+/* ================================================================
+   Mode switching
+   ================================================================ */
+function setMode(i, quiet){
+  state.mode = (i + MODES.length) % MODES.length;
+  const m = MODES[state.mode];
+  getProg(m.prog);
+  modeClock = 0; z = 0;
+  if (m.lattice){ seed = (Math.random()*4294967296) >>> 0; walker = new Walker(seed); } else walker = null;
+  if (RT){ for (const r of RT.fx){ target(r); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); } }
+  if (!quiet) showTitle();
+  syncUI();
+}
+function currentLook(){ const id = state.lookSel; return id !== 'auto' && LOOKS.some(l => l.id === id) ? id : MODES[state.mode].look; }
+
+/* ================================================================
+   Frame
+   ================================================================ */
+function sizeCanvas(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let cw = Math.round(innerWidth*dpr), ch = Math.round(innerHeight*dpr);
+  const maxPx = 3.4e6;
+  if (cw*ch > maxPx){ const k = Math.sqrt(maxPx/(cw*ch)); cw = Math.round(cw*k); ch = Math.round(ch*k); }
+  if (canvas.width !== cw || canvas.height !== ch){ canvas.width = cw; canvas.height = ch; }
+  const qs = state.quality === 'low' ? .4 : state.quality === 'med' ? .62 : state.quality === 'high' ? 1 : renderScale;
+  uQ = state.quality === 'low' ? .15 : state.quality === 'med' ? .55 : state.quality === 'high' ? 1 : Math.min(1, Math.max(.15, (renderScale - .3)/.5));
+  iw = Math.max(64, Math.round(innerWidth*qs)); ih = Math.max(48, Math.round(innerHeight*qs));
+  ensureTargets(iw, ih);
+}
+function step(dt){
+  clock += dt; modeClock += dt; autoTimer += dt;
+  audio.update(dt, clock);
+  updateMem(dt);
+  if (state.auto && autoTimer > 40 && clock - lastBeatClock > 4){ autoTimer = 0; punch(nextAutoMode(), 'auto'); }
+  const E = audio.env, m = MODES[state.mode];
+  speedNow = state.speed*(1 + .35*E.bass + .8*E.kick)*(1 + mem.boost);
+  if (m.lattice && walker){
+    walker.s += m.speed*speedNow*dt*.5;
+    if (walker.nearBreach() && !mem.active) punch(null, 'breach');
+  } else z += m.speed*speedNow*dt;
+  const k = 1 - Math.exp(-dt*7);
+  look[0] += (lookTarget[0] - look[0])*k; look[1] += (lookTarget[1] - look[1])*k;
+}
+function render(dt){
+  sizeCanvas();
+  const m = MODES[state.mode], E = audio.env;
+  let P = getProg(m.prog);
+  if (!ready(P)) return false;
+  const shake = reduceMotion ? 0 : E.kick*.012;
+  // scene
+  target(RT.scene);
+  gl.useProgram(P.p);
+  tex3(0, noiseTex); i1(P, 'uNoise', 0);
+  f2(P, 'uRes', iw, ih); f1(P, 'uTime', modeClock); f1(P, 'uZ', z);
+  f1(P, 'uSpeed', speedNow); f1(P, 'uKick', E.kick); f1(P, 'uBass', E.bass); f1(P, 'uMid', E.mid); f1(P, 'uHigh', E.high); f1(P, 'uHat', E.hat);
+  f1(P, 'uQ', uQ); f1(P, 'uFov', m.fov); f1(P, 'uCurve', m.curve ?? 1);
+  f4(P, 'uP', m.P || [0,0,0,0]);
+  f2(P, 'uLook', look[0] + (Math.random() - .5)*shake, look[1] + (Math.random() - .5)*shake);
+  if (m.lattice && walker){
+    const fr = walker.frame(m.lattice.cell, dt || 1/60);
+    f3(P, 'uCamPos', fr.p[0], fr.p[1], fr.p[2]); m3(P, 'uCamRot', fr.m);
+    u1(P, 'uSeed', seed);
+    f1(P, 'uCell', m.lattice.cell); f1(P, 'uTubeR', m.lattice.tube); f1(P, 'uNodeR', m.lattice.node); f1(P, 'uCapR', m.lattice.cap);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // fx
+  const cur = RT.fx[RT.ping], prev = RT.fx[1 - RT.ping]; RT.ping = 1 - RT.ping;
+  target(cur); gl.useProgram(fxP.p);
+  tex2(0, RT.scene.tex); i1(fxP, 'uScene', 0);
+  tex2(1, prev.tex); i1(fxP, 'uPrev', 1);
+  tex3(2, noiseTex); i1(fxP, 'uNoise', 2);
+  f2(fxP, 'uRes', iw, ih); f1(fxP, 'uTime', clock); f1(fxP, 'uFov', m.fov);
+  f1(fxP, 'uMemD', mem.D); f1(fxP, 'uMemA', mem.A); f1(fxP, 'uMemStyle', state.memStyle); f1(fxP, 'uShock', mem.shock);
+  f1(fxP, 'uTrail', Math.min(.95, m.trail*state.trail)); f1(fxP, 'uBlur', Math.min(3, .5*speedNow + E.kick*1.5 + mem.boost));
+  f1(fxP, 'uCA', .4 + E.kick*1.2 + E.hat*.4); f1(fxP, 'uKick', E.kick); f1(fxP, 'uSpin', .004*Math.sin(clock*.3));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // bloom
+  const B = RT.bloom;
+  target(B[0]); gl.useProgram(brightP.p); tex2(0, cur.tex); i1(brightP, 'uSrc', 0); f2(brightP, 'uTexel', 1/cur.w, 1/cur.h); f1(brightP, 'uTh', .75);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(downP.p); i1(downP, 'uSrc', 0);
+  for (let i = 1; i < B.length; i++){ target(B[i]); tex2(0, B[i - 1].tex); f2(downP, 'uTexel', 1/B[i - 1].w, 1/B[i - 1].h); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(upP.p); i1(upP, 'uSrc', 0);
+  for (let i = B.length - 1; i > 0; i--){ target(B[i - 1]); tex2(0, B[i].tex); f2(upP, 'uTexel', 1/B[i].w, 1/B[i].h); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.disable(gl.BLEND);
+  // final
+  target(null); gl.useProgram(finalP.p);
+  tex2(0, cur.tex); i1(finalP, 'uFx', 0);
+  tex2(1, B[0].tex); i1(finalP, 'uBloom', 1);
+  tex2(2, blueTex); i1(finalP, 'uBlue', 2);
+  f2(finalP, 'uRes', canvas.width, canvas.height); f1(finalP, 'uTime', clock); f1(finalP, 'uKick', E.kick);
+  f1(finalP, 'uFlash', mem.flash); f1(finalP, 'uBloomAmt', m.bloom*(1 + .5*E.kick)); f1(finalP, 'uExposure', m.exp*(1 + .15*E.kick));
+  i1(finalP, 'uLook', LOOKS.find(l => l.id === currentLook()).n);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return true;
+}
+
+let ema = 1/60, slowT = 0, fastT = 0, last = performance.now(), frames = 0, perfT = 0;
+function adapt(dt){
+  ema += (dt - ema)*.08;
+  if (state.quality !== 'auto') return;
+  if (ema > 1/42){ slowT += dt; fastT = 0; if (slowT > .6){ renderScale = Math.max(.3, renderScale*.88); slowT = 0; } }
+  else if (ema < 1/57){ fastT += dt; slowT = 0; if (fastT > 2.5){ renderScale = Math.min(1, renderScale*1.06); fastT = 0; } }
+  else { slowT = 0; fastT = 0; }
+}
+function loop(now){
+  const dt = Math.min(.1, Math.max(0, (now - last)/1000)); last = now;
+  step(dt);
+  render(dt);
+  adapt(dt);
+  hudTick(dt);
+  requestAnimationFrame(loop);
+}
+
+/* ================================================================
+   HUD
+   ================================================================ */
+const hud = $('#hud'), sheet = $('#sheet'), toastEl = $('#toast');
+let titleTimer = 0, idleTimer = 0, toastTimer = 0, openTab = null, meterT = 0;
+function showTitle(){
+  const m = MODES[state.mode];
+  $('#modeName').textContent = m.name;
+  $('#modeDesc').textContent = m.desc;
+  $('#modeIdx').textContent = String(state.mode + 1).padStart(2, '0') + ' of ' + MODES.length;
+  $('#ident').classList.remove('dim');
+  titleTimer = 5;
+}
+function toast(msg, secs = 3.2){ toastEl.textContent = msg; toastEl.classList.add('show'); toastTimer = secs; }
+function wake(){ idleTimer = 0; hud.classList.remove('idle'); }
+function hudTick(dt){
+  if (titleTimer > 0 && (titleTimer -= dt) <= 0) $('#ident').classList.add('dim');
+  if (toastTimer > 0 && (toastTimer -= dt) <= 0) toastEl.classList.remove('show');
+  if (!openTab){ idleTimer += dt; if (idleTimer > 7) hud.classList.add('idle'); }
+  meterT += dt;
+  if (meterT > 1/30){
+    meterT = 0;
+    const E = audio.env, vals = [E.kick, E.bass, E.mid, E.high, E.hat];
+    bars.forEach((b, i) => { b.style.transform = 'scaleY(' + (.08 + .92*Math.min(1, vals[i])).toFixed(3) + ')'; });
+    const bpm = audio.bpm ? Math.round(audio.bpm) : '—';
+    if (bpmEl.textContent !== String(bpm)) bpmEl.textContent = bpm;
+    const src = audio.kind === 'file' ? (audio.el && audio.el.paused ? 'Paused · ' : '') + audio.fileName : audio.kind === 'mic' ? 'Mic / line-in' : state.ghost ? 'Ghost beat' : 'No audio';
+    if (srcEl.textContent !== src) srcEl.textContent = src;
+  }
+  perfT += dt; frames++;
+  if (perfT > 1 && openTab === 'tune'){
+    $('#perf').textContent = Math.round(frames/perfT) + ' fps · rendering ' + iw + '×' + ih + ' and scaling up' + (floatOK ? '' : ' · 8-bit buffers on this device');
+    perfT = 0; frames = 0;
+  } else if (perfT > 1){ perfT = 0; frames = 0; }
+}
+const bars = [...document.querySelectorAll('#bars i')], bpmEl = $('#bpm'), srcEl = $('#src');
+
+function buildUI(){
+  const grid = $('#modeGrid');
+  MODES.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'card'; b.id = 'mode-' + i;
+    b.innerHTML = '<span class="no"></span><span class="nm"></span><span class="ds"></span>';
+    b.querySelector('.no').textContent = String(i + 1).padStart(2, '0');
+    b.querySelector('.nm').textContent = m.name;
+    b.querySelector('.ds').textContent = m.desc;
+    b.addEventListener('click', () => { state.auto = false; jump(i); });
+    grid.appendChild(b);
+  });
+  const chips = $('#lookChips');
+  [{id:'auto', name:'Auto'}, ...LOOKS].forEach(l => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.look = l.id; b.textContent = l.name;
+    b.addEventListener('click', () => { state.lookSel = l.id; store.set('look', l.id); syncUI(); });
+    chips.appendChild(b);
+  });
+  document.querySelectorAll('.dock [data-tab]').forEach(b => b.addEventListener('click', () => toggleTab(b.dataset.tab)));
+  $('#punchBtn').addEventListener('click', () => punch(null, 'manual'));
+  $('#autoBtn').addEventListener('click', () => { state.auto = !state.auto; beatsAuto = 0; autoTimer = 0; syncUI(); toast(state.auto ? 'Auto VJ on. It switches modes every ' + state.autoBars + ' bars through a membrane.' : 'Auto VJ off. The current mode stays put.'); });
+  const seg = (id, key, parse) => {
+    $(id).querySelectorAll('button').forEach(b => b.addEventListener('click', () => { state[key] = parse(b.dataset.v); store.set(key, state[key]); beatsMem = 0; syncUI(); }));
+  };
+  seg('#memEvery', 'memEvery', Number); seg('#memStyle', 'memStyle', Number); seg('#autoBars', 'autoBars', Number); seg('#quality', 'quality', String);
+  const range = (id, key, out) => { const el = $(id); el.value = state[key]; el.addEventListener('input', () => { state[key] = Number(el.value); store.set(key, state[key]); syncUI(); }); };
+  range('#speed', 'speed'); range('#trail', 'trail'); range('#sens', 'sens');
+  $('#ghost').checked = state.ghost; $('#ghost').addEventListener('change', e => { state.ghost = e.target.checked; store.set('ghost', state.ghost); });
+  $('#dropPunch').checked = state.dropPunch; $('#dropPunch').addEventListener('change', e => { state.dropPunch = e.target.checked; store.set('dropPunch', state.dropPunch); });
+  $('#file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadTrack(f); e.target.value = ''; });
+  $('#micBtn').addEventListener('click', async () => {
+    try { await audio.useMic(); toast('Listening to the mic or line-in.'); syncUI(); }
+    catch(err){ toast('The mic is blocked here. Load a track instead, or open wormhole-lab/index.html straight in Chrome or Safari to use the mic or line-in.', 6); }
+  });
+  $('#playBtn').addEventListener('click', () => { if (!audio.el) return; if (audio.el.paused){ audio.ensure(); audio.el.play(); } else audio.el.pause(); syncUI(); });
+  $('#fsBtn').addEventListener('click', toggleFS);
+  $('#hideBtn').addEventListener('click', () => { toggleTab(null); hud.classList.add('off'); toast('Controls hidden. Tap the screen to bring them back.'); });
+}
+async function loadTrack(f){
+  try { await audio.useFile(f); toast('Playing ' + audio.fileName + '. The BPM settles after a few bars.'); }
+  catch(err){ toast("That file wouldn't play here. Try an MP3 or WAV.", 5); }
+  syncUI();
+}
+function toggleTab(tab){
+  openTab = openTab === tab ? null : tab;
+  sheet.hidden = !openTab;
+  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.dataset.panel !== openTab; });
+  document.querySelectorAll('.dock [data-tab]').forEach(b => b.classList.toggle('open', b.dataset.tab === openTab));
+  if (openTab === 'modes'){ const c = $('#mode-' + state.mode); c && c.scrollIntoView({block:'nearest'}); }
+  wake();
+}
+function syncUI(){
+  document.querySelectorAll('#modeGrid .card').forEach((c, i) => { c.setAttribute('aria-pressed', i === state.mode); c.classList.toggle('bad', !!(progs[MODES[i].prog] && progs[MODES[i].prog].failed)); });
+  document.querySelectorAll('#lookChips button').forEach(b => b.setAttribute('aria-pressed', b.dataset.look === state.lookSel));
+  const segSync = (id, v) => $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v) === String(v)));
+  segSync('#memEvery', state.memEvery); segSync('#memStyle', state.memStyle); segSync('#autoBars', state.autoBars); segSync('#quality', state.quality);
+  $('#autoBtn').setAttribute('aria-pressed', state.auto);
+  $('#speedOut').textContent = Number(state.speed).toFixed(2).replace(/0$/, '') + '×';
+  $('#trailOut').textContent = Number(state.trail).toFixed(2).replace(/0$/, '') + '×';
+  $('#sensOut').textContent = Number(state.sens).toFixed(2).replace(/0$/, '') + '×';
+  const lk = LOOKS.find(l => l.id === currentLook());
+  $('#lookName').textContent = (state.lookSel === 'auto' ? 'Auto · ' : '') + lk.name;
+  $('#playBtn').hidden = audio.kind !== 'file';
+  if (audio.el) $('#playBtn').textContent = audio.el.paused ? 'Play' : 'Pause';
+  $('#vhs').hidden = currentLook() !== 'vhs';
+}
+function jump(i){ punch(i, 'jump'); }
+function toggleFS(){
+  const d = document;
+  if (!d.fullscreenElement){ const r = d.documentElement.requestFullscreen && d.documentElement.requestFullscreen(); if (r && r.catch) r.catch(() => toast('Fullscreen is not available in this view.')); else if (!r) toast('Fullscreen is not available in this view.'); }
+  else d.exitFullscreen && d.exitFullscreen();
+}
+function vhsDate(){
+  const d = new Date(), mo = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()];
+  $('#vhsDate').textContent = mo + ' ' + String(d.getDate()).padStart(2, '0') + ' 1997';
+}
+
+/* ---------- input ---------- */
+let drag = null, wakeLock = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = {x:e.clientX, y:e.clientY, t:performance.now(), moved:false};
+  try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+  audio.ctx && audio.ctx.state === 'suspended' && audio.ctx.resume();
+  if (!wakeLock && navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { wakeLock = l; }).catch(() => {});
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 8) drag.moved = true;
+  lookTarget = [Math.max(-.7, Math.min(.7, dx/innerWidth*1.4)), Math.max(-.6, Math.min(.6, -dy/innerHeight*1.2))];
+});
+const endDrag = () => {
+  if (drag && !drag.moved && performance.now() - drag.t < 350){
+    if (openTab) toggleTab(null);
+    else if (hud.classList.contains('off') || hud.classList.contains('idle')){ hud.classList.remove('off'); wake(); }
+    else { hud.classList.add('idle'); }
+  }
+  drag = null; lookTarget = [0, 0];
+};
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+document.addEventListener('pointermove', e => { if (e.target !== canvas) wake(); });
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'range') return;
+  const k = e.key.toLowerCase();
+  if (k === ' '){ e.preventDefault(); punch(null, 'manual'); }
+  else if (k === 'arrowright'){ state.auto = false; jump(state.mode + 1); }
+  else if (k === 'arrowleft'){ state.auto = false; jump(state.mode - 1); }
+  else if (k === 'l'){ const ids = ['auto', ...LOOKS.map(l => l.id)]; state.lookSel = ids[(ids.indexOf(state.lookSel) + 1) % ids.length]; store.set('look', state.lookSel); syncUI(); toast('Look: ' + $('#lookName').textContent); }
+  else if (k === 'a'){ $('#autoBtn').click(); }
+  else if (k === 'h'){ hud.classList.toggle('off'); }
+  else if (k === 'f'){ toggleFS(); }
+  else if (/^[1-9]$/.test(k)){ state.auto = false; jump(Number(k) - 1); }
+  else return;
+  wake(); syncUI();
+});
+const dropEl = $('#drop');
+window.addEventListener('dragover', e => { e.preventDefault(); dropEl.hidden = false; });
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) dropEl.hidden = true; });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dropEl.hidden = true;
+  const f = [...(e.dataTransfer && e.dataTransfer.files || [])].find(f => /^audio\//.test(f.type) || /\.(mp3|wav|aiff?|flac|m4a|ogg)$/i.test(f.name));
+  if (f) loadTrack(f); else toast('Drop an audio file: MP3, WAV, AIFF or FLAC.');
+});
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); toast('The graphics context was lost. Reload the page to restart.', 8); });
+
+/* ---------- boot ---------- */
+buildUI(); vhsDate();
+setMode(0, true); showTitle();
+for (const P of [fxP, brightP, downP, upP, finalP]) ready(P);
+// warm up the other scene programs in the background so auto VJ never stalls
+const warm = [...new Set(MODES.map(m => m.prog))];
+let warmI = 0;
+function warmNext(){ if (warmI >= warm.length) return; const P = getProg(warm[warmI++]); if (parallel) ready(P); setTimeout(warmNext, parallel ? 60 : 400); }
+setTimeout(warmNext, 300);
+
+window.__wh = {
+  modes:MODES.map(m => m.name), looks:LOOKS.map(l => l.id), errors,
+  compileAll(){ for (const k of Object.keys(SCENE_SRC)){ const P = getProg(k); gl.getProgramParameter(P.p, gl.LINK_STATUS); P.ready = false; ready(P); } return errors.slice(); },
+  shot(i, o = {}){
+    if (i !== state.mode || o.fresh) setMode(i, true);
+    state.lookSel = o.look || 'auto';
+    state.quality = 'high'; renderScale = 1;
+    const m = MODES[i], t = o.t ?? 6;
+    clock = t; modeClock = t;
+    audio.env.kick = o.kick ?? .25; audio.env.bass = o.bass ?? .5; audio.env.mid = .4; audio.env.high = .3; audio.env.hat = 0;
+    if (m.lattice && walker){ walker.s = 1 + t*m.speed*.5; walker.f = null; for (let j = 0; j < 30; j++) walker.frame(m.lattice.cell, 1/60); }
+    else z = t*m.speed;
+    mem.active = o.memD != null; mem.D = o.memD ?? 16; mem.A = o.memD != null ? 1 : 0; mem.flash = o.flash ?? 0; mem.shock = o.shock ?? 1; mem.boost = 0;
+    state.memStyle = o.memStyle ?? 0;
+    const frames = o.frames ?? 1;
+    for (let f = 0; f < frames; f++){ render(1/60); }
+    const ok = render(1/60);
+    mem.active = false;
+    return ok ? canvas.toDataURL('image/png') : null;
+  },
+  status(){ return {mode:state.mode, bpm:audio.bpm, kind:audio.kind, kick:audio.env.kick, bass:audio.env.bass, memActive:mem.active, iw, ih, scale:renderScale}; },
+  walkerCheck(n){ const w = new Walker(12345); for (let i = 0; i < n; i++) w.step(); return {nodes:w.nodes.length, breaches:w.breach.size}; },
+  segOpen,
+};
+if (!TEST) requestAnimationFrame(t => { last = t; loop(t); });
+})();
+</script>
+</body>
+</html>
