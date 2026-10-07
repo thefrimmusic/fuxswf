@@ -1,5 +1,7 @@
 # Wormhole Lab
 
+![All 15 modes](modes-preview.png)
+
 Audio-reactive tunnel visuals for DJ sets, built around the 1997 *Contact* wormhole ride (Weta Digital) and a dithered "we must go deeper" spiral GIF. One self-contained WebGL2 page with no build step and no dependencies.
 
 ## Run it
