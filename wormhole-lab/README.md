@@ -30,14 +30,15 @@ Audio-reactive tunnel visuals for DJ sets, built around the 1997 *Contact* wormh
 
 ## Nexus Runner (`nexus.html`)
 
-![Nexus Runner mid-detour](nexus-preview.png)
+![Nexus Runner](nexus-preview.png)
 
-A visualizer built only around the Nexus tunnel. You ride the main tunnel, and every so often the camera turns off into one of the side arteries, threads through the gyroid labyrinth junction by junction, and finds its way back to the main line.
+A visualizer built only around the Nexus tunnel. You ride a tunnel whose walls are full of side arteries, and at random moments the camera turns down one of them. The artery widens around you into a full new tunnel with its own side arteries, and the old tunnel closes up behind you. It never goes back. It just keeps branching.
 
-- **Real side paths.** The arteries are the two labyrinths of the gyroid. Their junctions sit at odd multiples of π/4, where g = ±1.5, and each one has exactly three branches. The route planner walks that graph and checks every turn-off and rejoin against the same distance field the shader draws, so the camera never cuts through a wall. Across 12+ simulated minutes and about 900 junctions, it never got closer than 0.12 units to a wall.
-- **When it turns off:** every 8, 16 or 32 bars, on the drop, or when you press **Detour** or `Space`. **Lost** keeps it wandering almost all the time. Detour length can be Short (2–3 junctions), Medium (3–6) or Long (6–11).
-- **What you see:** each kick sends a ring of light out through the labyrinth from where you are. Arteries widen around the camera as it passes, the view widens inside them, and each junction you pass flashes. A route map shows the main line, your trail colored by labyrinth, and the path ahead.
-- 5 palettes (Nexus, Ember, Biolume, Ultraviolet, Ghost), the same 7 looks as the Lab, and the same audio engine.
+- **It turns into the arteries you can see.** The side arteries are the two labyrinths of a gyroid, and their junctions sit at odd multiples of π/4, where g = ±1.5. To turn, the planner picks a junction just outside the tunnel wall that it can reach in a straight line, threads 0–3 more junctions, then starts a new tunnel ("leg") along the next artery edge and grows its radius from zero to full.
+- **Timing:** Random (every 3–20 s, the default), Rare (10–40 s), Often (3–8 s), or On the beat (every 4–8 bars). You can also turn with **Turn** or `Space`, or on the drop. Before each turn the chosen artery mouth pulses, and the status says where it is: "the cyan artery at 2 o'clock, in 3 beats".
+- **Safe and smooth:** the JS planner uses the same distance field as the shader. Across about 28 simulated minutes and 371 turns at 0.25×–3× speed, the camera stayed at least 0.25 units from any wall. It brakes through turns, so the view never swings much faster than about 90°/s.
+- **Runs for hours:** the GPU world is rebased by whole gyroid periods, and long tunnels are re-origined every 240 units, so values stay small after hours of play.
+- **HUD:** a "BRANCH 08" card on each turn (can be switched off), a heading-up route map with the next turn dashed, the turn count and distance traveled, 5 palettes, the same 7 looks as the Lab, and the same audio engine.
 
 ## Keys
 
